@@ -1,19 +1,17 @@
-# main.py
-
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from config import BOT_TOKEN, WEBHOOK_URL
-from middlewares.check_subscription import CheckSubscription
+from middlewares.check_subscription import CheckSubscriptionMiddleware
 from handlers.start import router as start_router
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher()
 
 # اضافه کردن middleware بررسی عضویت
-dp.update.middleware(CheckSubscription())
+dp.update.middleware(CheckSubscriptionMiddleware())
 
 # ثبت روت‌های مربوط به هندلرها
 dp.include_router(start_router)
