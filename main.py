@@ -3,8 +3,8 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio
 
-BOT_TOKEN = 'توکن رباتت'
-OWNER_ID = 123456789  # آیدی عددی ادمین
+BOT_TOKEN = '7086274656:AAEpviQqS2hKPeyvsHt4rQSXIgrehlW2Ums'
+OWNER_ID = 6387942633  # آیدی عددی ادمین
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
