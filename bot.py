@@ -84,8 +84,8 @@ async def handle_all_messages(message: types.Message):
     step = state['step']
 
     if step == UploadStep.WAITING_FILE:
-        if message.content_type not in ['photo', 'video', 'document']:
-            await message.answer(" داداش سوپر رو بده بیاد 🫣")
+        if message.content_type not in [ 'video', ]:
+            await message.answer(" داداش سوپر رو بده بیاد این کصخل بازیا چیه")
             return
         
         # بررسی سایز فایل
@@ -98,7 +98,7 @@ async def handle_all_messages(message: types.Message):
             file_size = message.photo[-1].file_size
 
         if file_size > 200 * 1024 * 1024:
-            await message.answer("حجم فایل نباید بیشتر از ۲۰۰ مگابایت باشد.")
+            await message.answer("جاکش کمتر از ۲۰۰ مگ فایل بفرس")
             return
         
         # ذخیره اطلاعات فایل
@@ -110,12 +110,12 @@ async def handle_all_messages(message: types.Message):
             state['file_id'] = message.photo[-1].file_id
 
         state['step'] = UploadStep.WAITING_CAPTION
-        await message.answer("ارباب کپشن سکسیتو بزن 🤤 آیدی چنلو خودم میزنم")
+        await message.answer("عکس کاور هم بفرست شومبول طلا")
 
     elif step == UploadStep.WAITING_CAPTION:
         state['caption'] = message.text
         state['step'] = UploadStep.WAITING_COVER
-        await message.answer("عکس کاور هم بفرست شومبول طلا")
+        await message.answer("ارباب کپشن سکسیتو بزن 🤤 آیدی چنلو خودم میزنم")
 
     elif step == UploadStep.WAITING_COVER:
         if message.content_type != 'photo':
