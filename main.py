@@ -40,21 +40,22 @@ def subscribe_keyboard():
 async def start_command(message: Message, command: CommandStart, state: FSMContext):
     if message.from_user.id == OWNER_ID:
         await message.answer(
-            "سلام مدیر عزیز!\n"
+            "سلام مدیر عزیز\n"
             "میتوانید فایل آپلود کنید یا پیام همگانی ارسال کنید."
         )
-        return
 
-    if command.args:
-        is_subscribed = await check_user_subscription(message.bot, message.from_user.id)
-        if not is_subscribed:
-            await message.answer(
-                "برای مشاهده فایل ابتدا باید عضو کانال شوید.",
-                reply_markup=subscribe_keyboard()
-            )
-            return
-        try:
-            await message.answer_chat_action("upload_photo")
+        if command.args:
+            is_subscribed = await check_user_subscription(message.bot, message.from_user.id)
+            if not is_subscribed:
+                await message.answer(
+                    "برای مشاهده فایل ابتدا باید عضو کانال شوید.",
+                    reply_markup=subscribe_keyboard()
+                )
+                return
+
+            try:
+                await message.answer_chat_action("upload_photo")
+                # ادامه کدها...
             msg = await message.answer_photo(photo=command.args)
             await asyncio.sleep(15)
             await msg.delete()
