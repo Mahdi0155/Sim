@@ -17,7 +17,7 @@ dp.update.middleware(CheckSubscriptionMiddleware())
 dp.include_router(start_router)
 
 async def on_startup(app):
-    await bot.set_webhook(https://sim-n0vy.onrender.com/webhook)
+    await bot.set_webhook("https://sim-n0vy.onrender.com/webhook")
     await bot.set_my_commands([
         BotCommand(command="start", description="شروع ربات"),
     ])
