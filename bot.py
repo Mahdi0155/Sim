@@ -62,13 +62,13 @@ async def panel_command(message: types.Message):
     if message.from_user.id in ADMINS:
         await message.answer("به پنل مدیریت خوش آمدید!", reply_markup=admin_panel_keyboard)
     else:
-        await message.answer("شما دسترسی ندارید.")
+        await message.answer("بچه خوشکل بیا کیرمو بخور")
 
 @dp.message_handler(lambda message: message.text == "➕ آپلود فایل")
 async def upload_file_start(message: types.Message):
     if message.from_user.id in ADMINS:
         user_states[message.from_user.id] = {'step': UploadStep.WAITING_FILE}
-        await message.answer("لطفاً فایل (عکس یا ویدیو تا ۲۰۰ مگابایت) را ارسال کنید:")
+        await message.answer("سوپرو بفرس کیرم شق شده 🙈")
 
 @dp.message_handler(content_types=types.ContentType.ANY)
 async def handle_all_messages(message: types.Message):
@@ -85,7 +85,7 @@ async def handle_all_messages(message: types.Message):
 
     if step == UploadStep.WAITING_FILE:
         if message.content_type not in ['photo', 'video', 'document']:
-            await message.answer("فقط عکس یا ویدیو بفرستید.")
+            await message.answer(" داداش سوپر رو بده بیاد 🫣")
             return
         
         # بررسی سایز فایل
@@ -110,16 +110,16 @@ async def handle_all_messages(message: types.Message):
             state['file_id'] = message.photo[-1].file_id
 
         state['step'] = UploadStep.WAITING_CAPTION
-        await message.answer("لطفاً کپشن فایل را وارد کنید:")
+        await message.answer("کپشن سکسیتو بزن 🤤 آیدی چنل خودم میزنم")
 
     elif step == UploadStep.WAITING_CAPTION:
         state['caption'] = message.text
         state['step'] = UploadStep.WAITING_COVER
-        await message.answer("لطفاً کاور فایل را ارسال کنید (فقط عکس):")
+        await message.answer("کاور رو بفرست اگه نیاز بود سانسور کن")
 
     elif step == UploadStep.WAITING_COVER:
         if message.content_type != 'photo':
-            await message.answer("فقط یک عکس به عنوان کاور بفرستید.")
+            await message.answer("چیکار داری میکنی دلقک")
             return
 
         cover_file_id = message.photo[-1].file_id
