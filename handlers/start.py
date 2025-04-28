@@ -4,39 +4,47 @@ from aiogram.filters import CommandStart
 from keyboards.subscribe import subscribe_keyboard
 from utils.check_subscription import check_user_subscription
 from config import OWNER_ID
+from aiogram.types import FSInputFile
 
 router = Router()
 
 @router.message(CommandStart())
-async def start_command(message: Message):
+async def start_command(message: Message, command: CommandStart):
     if message.from_user.id == OWNER_ID:
         return  # مدیر نیازی به این هندلر نداره
 
-    # چک عضویت کاربر
-    is_subscribed = await check_user_subscription(message.bot, message.from_user.id)
-    if not is_subscribed:
-        await message.answer(
-            "برای استفاده از ربات، ابتدا در کانال عضو شوید.", 
-            reply_markup=subscribe_keyboard()
-        )
-        return
-
-    # چک پیلود (آیا کاربر از لینک "مشاهده فایل" وارد شده؟)
-    payload = message.text.split(' ')
-    if len(payload) > 1:
-        file_id = payload[1]
+    # اگر فایل آی‌دی همراه استارت بود
+    if command.args:
+        file_id = command.args
+        
+        # چک عضویت قبل از ارسال فایل
+        is_subscribed = await check_user_subscription(message.bot, message.from_user.id)
+        if not is_subscribed:
+            await message.answer(
+                "برای مشاهده فایل ابتدا باید عضو کانال شوید.",
+                reply_markup=subscribe_keyboard()
+            )
+            return
+        
+        # فرض می‌کنیم فایل ممکنه عکس یا ویدیو باشه
         try:
-            # سعی کن فایل رو به عنوان عکس ارسال کنی
             await message.answer_chat_action("upload_photo")
             await message.answer_photo(photo=file_id)
-        except:
+        except Exception:
             try:
-                # اگر عکس نبود، سعی کن ویدیو بفرستی
                 await message.answer_chat_action("upload_video")
                 await message.answer_video(video=file_id)
-            except:
-                await message.answer("متاسفم، فایل قابل ارسال نیست.")
+            except Exception:
+                await message.answer("فایل قابل ارسال نیست یا معتبر نمی‌باشد.")
+        
         return
 
-    # اگر پیلود نداشت (یعنی فقط /start بود)
-    await message.answer("خوش آمدید.")
+    # اگر بدون آرگومان استارت زده بود (معمولی)
+    is_subscribed = await check_user_subscription(message.bot, message.from_user.id)
+    if is_subscribed:
+        await message.answer("خوش آمدید.")
+    else:
+        await message.answer(
+            "برای استفاده از ربات، ابتدا در کانال عضو شوید.",
+            reply_markup=subscribe_keyboard()
+        )
