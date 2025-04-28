@@ -25,7 +25,7 @@ async def on_startup(app):
 async def on_shutdown(app):
     await bot.delete_webhook()
 
-async def main():
+async def create_app():
     app = web.Application()
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
@@ -36,4 +36,6 @@ async def main():
     return app
 
 if __name__ == "__main__":
-    web.run_app(main(), host="0.0.0.0", port=10000)
+    # اصلاح اینجا:
+    app = asyncio.run(create_app())
+    web.run_app(app, host="0.0.0.0", port=10000)
