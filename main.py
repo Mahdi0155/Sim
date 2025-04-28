@@ -1,166 +1,178 @@
-import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, CallbackQuery, Message
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters.middleware import BaseMiddleware
-from aiogram import Router
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
-from config import BOT_TOKEN, OWNER_ID, CHANNEL_ID, CHANNEL_LINK, WEBHOOK_URL
+import logging
+import json
+import os
+from uuid import uuid4
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+)
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, filters,
+    ContextTypes, CallbackQueryHandler, ConversationHandler
+)
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# اطلاعات حساس
+TOKEN = "7086274656:AAEkxL0Xwktb_PVddppdNZ8S88ggGNpRMqI"
+ADMINS = [6387942633, 6039863213]
+DATA_FILE = 'files.json'
 
-class UploadStates(StatesGroup):
-    waiting_for_caption = State()
-    waiting_for_broadcast_text = State()
+# استیج‌های گفتگو
+WAITING_FOR_FILE, WAITING_FOR_CAPTION, WAITING_FOR_COVER = range(3)
 
-class CheckSubscriptionMiddleware(BaseMiddleware):
-    async def __call__(self, handler, event, data):
-        if event.message is None:
-            return await handler(event, data)
-        try:
-            member = await event.bot.get_chat_member(CHANNEL_ID, event.message.from_user.id)
-            if member.status not in ["member", "administrator", "creator"]:
-                await event.message.answer(
-                    "You must join the channel to use the bot.",
-                    reply_markup=subscribe_keyboard()
-                )
-                return
-        except TelegramBadRequest:
-            pass
-        await handler(event, data)
+# لاگ
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def subscribe_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Join Channel", url=CHANNEL_LINK)],
-        [InlineKeyboardButton(text="Check Subscription", callback_data="check_subscribe")]
-    ])
-
-async def is_subscribed(bot: Bot, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        return member.status in ("member", "administrator", "creator")
-    except TelegramBadRequest:
-        return False
-
-async def start_command(message: Message, command: CommandStart):
-    if message.from_user.id == OWNER_ID:
-        await message.answer("Welcome Admin! Please send a file or text for broadcast.")
-        return
-    if command.args:
-        file_id = command.args
-        is_sub = await is_subscribed(message.bot, message.from_user.id)
-        if not is_sub:
-            await message.answer(
-                "You must join the channel to view the file.",
-                reply_markup=subscribe_keyboard()
-            )
-            return
-        try:
-            sent = await message.answer_photo(photo=file_id)
-        except:
-            try:
-                sent = await message.answer_video(video=file_id)
-            except:
-                await message.answer("File error.")
-                return
-        await message.answer("Please save the file, it will be deleted in 15 seconds.")
-        await asyncio.sleep(15)
-        try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=sent.message_id)
-        except:
-            pass
-        return
-    is_sub = await is_subscribed(message.bot, message.from_user.id)
-    if is_sub:
-        await message.answer("Welcome!")
+# بارگذاری داده‌ها
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, 'r') as f:
+            return json.load(f)
     else:
-        await message.answer(
-            "You must join the channel to use the bot.",
-            reply_markup=subscribe_keyboard()
-        )
+        return {}
 
-async def file_handler(message: Message, state: FSMContext):
-    if message.from_user.id != OWNER_ID:
-        return
-    file_id = message.photo[-1].file_id if message.photo else message.video.file_id
-    await state.update_data(file_id=file_id)
-    await message.answer("File received. Now send the caption.")
-    await state.set_state(UploadStates.waiting_for_caption)
+# ذخیره داده‌ها
+def save_data(data):
+    with open(DATA_FILE, 'w') as f:
+        json.dump(data, f)
 
-async def caption_handler(message: Message, state: FSMContext):
-    if message.from_user.id != OWNER_ID:
-        return
-    data = await state.get_data()
-    file_id = data.get("file_id")
-    caption = message.text
-    link = f"https://t.me/{(await bot.get_me()).username}?start={file_id}"
-    try:
-        await message.bot.send_photo(chat_id=message.chat.id, photo=file_id, caption=f"{caption}\n\n🔗 {link}")
-    except:
-        try:
-            await message.bot.send_video(chat_id=message.chat.id, video=file_id, caption=f"{caption}\n\n🔗 {link}")
-        except:
-            await message.answer("Failed to send media.")
-    await state.clear()
+data = load_data()
 
-async def broadcast_command(message: Message, state: FSMContext):
-    if message.from_user.id != OWNER_ID:
-        return
-    await message.answer("Send the message to broadcast to all users.")
-    await state.set_state(UploadStates.waiting_for_broadcast_text)
-
-users = set()
-
-async def handle_broadcast_text(message: Message, state: FSMContext):
-    if message.from_user.id != OWNER_ID:
-        return
-    text = message.text
-    success = 0
-    fail = 0
-    for user_id in users:
-        try:
-            await bot.send_message(chat_id=user_id, text=text)
-            success += 1
-        except:
-            fail += 1
-    await message.answer(f"Broadcast completed!\nSuccess: {success}\nFailed: {fail}")
-    await state.clear()
-
-async def check_subscription(callback: CallbackQuery):
-    is_sub = await is_subscribed(callback.bot, callback.from_user.id)
-    if is_sub:
-        await callback.message.answer("Subscription verified. Please use /start again.")
+# استارت
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id in ADMINS:
+        await update.message.reply_text("سلام ادمین عزیز! برای ورود به پنل دستور /panel را وارد کنید.")
     else:
-        await callback.message.answer(
-            "You are not subscribed yet.",
-            reply_markup=subscribe_keyboard()
-        )
+        await update.message.reply_text("خوش آمدید!")
 
-async def on_startup(app):
-    await bot.set_webhook(WEBHOOK_URL)
-    await bot.set_my_commands([types.BotCommand(command="start", description="Start the bot"), types.BotCommand(command="broadcast", description="Broadcast a message")])
+# پنل ادمین
+async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMINS:
+        return
 
-async def on_shutdown(app):
-    await bot.delete_webhook()
+    keyboard = [
+        [InlineKeyboardButton("آپلود فایل", callback_data="upload_file")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("پنل ادمین:", reply_markup=reply_markup)
 
-dp.message.middleware(CheckSubscriptionMiddleware())
-dp.message.register(start_command, CommandStart())
-dp.message.register(file_handler, F.content_type.in_({"photo", "video"}))
-dp.message.register(caption_handler, UploadStates.waiting_for_caption)
-dp.message.register(broadcast_command, Command("broadcast"))
-dp.message.register(handle_broadcast_text, UploadStates.waiting_for_broadcast_text)
-dp.callback_query.register(check_subscription, F.data == "check_subscribe")
+# شروع آپلود فایل
+async def panel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-app = web.Application()
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
-SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
-setup_application(app, dp, bot=bot)
+    if query.data == "upload_file":
+        await query.message.reply_text("لطفاً عکس یا ویدیو مورد نظر را ارسال کنید (حداکثر ۲۰۰ مگابایت).")
+        return WAITING_FOR_FILE
 
-if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=10000)
+# دریافت فایل
+async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = update.message.photo[-1] if update.message.photo else update.message.video
+
+    if not file:
+        await update.message.reply_text("فقط عکس یا ویدیو مجاز است!")
+        return WAITING_FOR_FILE
+
+    file_size = file.file_size
+    if file_size > 200 * 1024 * 1024:
+        await update.message.reply_text("فایل بزرگتر از ۲۰۰ مگابایت است!")
+        return WAITING_FOR_FILE
+
+    context.user_data['file_id'] = file.file_id
+    await update.message.reply_text("حالا کپشن فایل را وارد کنید:")
+    return WAITING_FOR_CAPTION
+
+# دریافت کپشن
+async def receive_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['caption'] = update.message.text
+    await update.message.reply_text("حالا کاور فایل را ارسال کنید (یک عکس):")
+    return WAITING_FOR_COVER
+
+# دریافت کاور
+async def receive_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        await update.message.reply_text("لطفاً فقط عکس بفرستید.")
+        return WAITING_FOR_COVER
+
+    cover_file_id = update.message.photo[-1].file_id
+    file_id = context.user_data['file_id']
+    caption = context.user_data['caption']
+
+    # ساخت شناسه اختصاصی
+    unique_id = str(uuid4())
+
+    # ذخیره داده
+    data[unique_id] = {
+        'file_id': file_id,
+        'caption': caption,
+        'cover_id': cover_file_id
+    }
+    save_data(data)
+
+    bot_username = (await context.bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start={unique_id}"
+
+    await update.message.reply_text(f"فایل با موفقیت ذخیره شد!\n\nلینک اختصاصی:\n{link}")
+
+    return ConversationHandler.END
+
+# مدیریت لینک اختصاصی
+async def handle_start_with_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        return
+
+    file_code = args[0]
+    if file_code not in data:
+        await update.message.reply_text("فایل مورد نظر یافت نشد.")
+        return
+
+    file_info = data[file_code]
+    keyboard = [
+        [InlineKeyboardButton("مشاهده فایل", url=f"https://t.me/{(await context.bot.get_me()).username}?start={file_code}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_photo(
+        chat_id=update.effective_chat.id,
+        photo=file_info['cover_id'],
+        caption=file_info['caption'],
+        reply_markup=reply_markup
+    )
+
+    # بعد از کاور، فایل اصلی هم میفرسته
+    await context.bot.send_document(
+        chat_id=update.effective_chat.id,
+        document=file_info['file_id'],
+        caption=file_info['caption']
+    )
+
+# کنسل کردن گفتگو
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("عملیات لغو شد.")
+    return ConversationHandler.END
+
+# ران کردن
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(panel_callback)],
+        states={
+            WAITING_FOR_FILE: [MessageHandler(filters.PHOTO | filters.VIDEO, receive_file)],
+            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT, receive_caption)],
+            WAITING_FOR_COVER: [MessageHandler(filters.PHOTO, receive_cover)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('panel', panel))
+    app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.ALL, handle_start_with_id))
+
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
