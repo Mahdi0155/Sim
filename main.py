@@ -3,9 +3,11 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
+
 from config import BOT_TOKEN, WEBHOOK_URL
 from middlewares.check_subscription import CheckSubscriptionMiddleware
 from handlers.start import router as start_router
+from handlers.admin import router as admin_router  # اینم اضافه شد
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher()
@@ -15,9 +17,10 @@ dp.update.middleware(CheckSubscriptionMiddleware())
 
 # ثبت روت‌های مربوط به هندلرها
 dp.include_router(start_router)
+dp.include_router(admin_router)  # اینم اضافه شد
 
 async def on_startup(app):
-    await bot.set_webhook("https://sim-n0vy.onrender.com/webhook")
+    await bot.set_webhook(WEBHOOK_URL)
     await bot.set_my_commands([
         BotCommand(command="start", description="شروع ربات"),
     ])
