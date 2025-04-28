@@ -25,7 +25,7 @@ def subscribe_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="عضویت در کانال", url=CHANNEL_LINK)],
         [InlineKeyboardButton(text="بررسی عضویت", callback_data="check_sub")]
-    ])from aiogram.types import FSInputFile
+    ]from aiogram.types import FSInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
