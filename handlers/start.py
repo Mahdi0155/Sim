@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import CommandStart
-from keyboards.inline import subscribe_keyboard
+from keyboards.subscribe import subscribe_keyboard  # <<<<<< اصلاح شد
 from utils.check_subscription import check_user_subscription
 from config import OWNER_ID
 
