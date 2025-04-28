@@ -7,6 +7,7 @@ from aiohttp import web
 from config import BOT_TOKEN, WEBHOOK_URL
 from middlewares.check_subscription import CheckSubscriptionMiddleware
 from handlers.start import router as start_router
+from handlers.callbacks import router as callbacks_router
 from handlers.admin import router as admin_router  # اینم اضافه شد
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
@@ -18,6 +19,7 @@ dp.update.middleware(CheckSubscriptionMiddleware())
 # ثبت روت‌های مربوط به هندلرها
 dp.include_router(admin_router)  # اول Admin
 dp.include_router(start_router)  # بعد Users
+dp.include_router(callbacks_router)  # اینم اضافه بشه
 
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
