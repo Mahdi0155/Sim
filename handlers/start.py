@@ -14,7 +14,8 @@ async def start_command(message: Message):
         return  # مدیر نیازی به این هندلر نداره
 
     # اگر فایل آی‌دی همراه استارت بود
-    if command.args:
+    args = message.get_args()
+if args:
         file_id = command.args
         
         # چک عضویت قبل از ارسال فایل
