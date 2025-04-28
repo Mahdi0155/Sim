@@ -1,7 +1,5 @@
-# handlers/admin.py
-
 from aiogram import Router, F
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from states.states import UploadStates
@@ -19,21 +17,24 @@ async def start_handler(message: Message):
 @router.message(F.content_type.in_({"photo", "video"}))
 async def file_handler(message: Message, state: FSMContext):
     if message.from_user.id != OWNER_ID:
+        print(f"Unauthorized user tried to send file: {message.from_user.id}")
         return
     file_id = message.photo[-1].file_id if message.photo else message.video.file_id
     await state.update_data(file_id=file_id)
     await message.answer("فایل دریافت شد. حالا لطفا کپشن فایل را ارسال کنید.")
-    await state.set_state(UploadStates.waiting_for_caption)
+    await state.set_state(UploadStates.waiting_for_caption.state)
 
 @router.message(UploadStates.waiting_for_caption)
 async def caption_handler(message: Message, state: FSMContext):
     if message.from_user.id != OWNER_ID:
+        print(f"Unauthorized user tried to send caption: {message.from_user.id}")
         return
     data = await state.get_data()
     file_id = data.get("file_id")
     caption = message.text
 
-    file_link = f"https://t.me/{(await message.bot.get_me()).username}?start={file_id}"
+    bot_info = await message.bot.get_me()
+    file_link = f"https://t.me/{bot_info.username}?start={file_id}"
 
     await message.answer(
         f"{caption}\n\n👉 [مشاهده فایل]({file_link})",
