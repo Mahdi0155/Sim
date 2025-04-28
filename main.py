@@ -16,8 +16,8 @@ dp = Dispatcher()
 dp.update.middleware(CheckSubscriptionMiddleware())
 
 # ثبت روت‌های مربوط به هندلرها
-dp.include_router(start_router)
-dp.include_router(admin_router)  # اینم اضافه شد
+dp.include_router(admin_router)  # اول Admin
+dp.include_router(start_router)  # بعد Users
 
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
