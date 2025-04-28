@@ -9,7 +9,7 @@ from aiogram.types import FSInputFile
 router = Router()
 
 @router.message(CommandStart())
-async def start_command(message: Message, command: CommandStart):
+async def start_command(message: Message):
     if message.from_user.id == OWNER_ID:
         return  # مدیر نیازی به این هندلر نداره
 
