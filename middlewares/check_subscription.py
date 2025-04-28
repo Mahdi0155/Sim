@@ -14,7 +14,7 @@ class CheckSubscriptionMiddleware(BaseMiddleware):
             if member.status not in ["member", "administrator", "creator"]:
                 await event.message.answer(
                     "برای استفاده از ربات باید عضو کانال شوید.",
-                    reply_markup=subscribe_keyboard
+                    reply_markup=subscribe_keyboard()
                 )
                 return
         except TelegramBadRequest:
