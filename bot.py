@@ -5,7 +5,7 @@ from datetime import timedelta
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler, CallbackContext
+    ContextTypes, ConversationHandler
 )
 
 # اطلاعات ربات
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
-    pass
+    _ = application.job_queue  # اطمینان از فعال بودن job_queue
 
 # تعریف ربات
 application = Application.builder().token(TOKEN).post_init(post_init).build()
@@ -95,11 +95,14 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         minutes = int(update.message.text)
-        context.job_queue.run_once(
+        job_data = context.user_data.copy()
+
+        await context.application.job_queue.run_once(
             send_scheduled,
             when=timedelta(minutes=minutes),
-            data=context.user_data.copy()
+            data=job_data
         )
+
         await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
     except ValueError:
@@ -117,17 +120,16 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
     elif media_type == 'video':
         await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
-async def send_scheduled(context: CallbackContext):
-    data = context.job.data
-    media_type = data['media_type']
-    file_id = data['file_id']
-    caption = data['caption']
+async def send_scheduled(context: ContextTypes.DEFAULT_TYPE):
+    job_data = context.job.data
+    media_type = job_data['media_type']
+    file_id = job_data['file_id']
+    caption = job_data['caption']
 
-    bot = context.bot
     if media_type == 'photo':
-        await bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
     elif media_type == 'video':
-        await bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
