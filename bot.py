@@ -28,6 +28,16 @@ async def post_init(application: Application):
 
 application = Application.builder().token(TOKEN).post_init(post_init).build()
 
+# تابع برای مدیریت خطاها
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"استثنا در پردازش: {context.error}")
+    # لاگ کردن traceback کامل برای دیباگ بهتر
+    traceback_str = ''.join(traceback.format_exception(None, context.error, context.error.__traceback__))
+    logger.error(f"جزئیات خطا: {traceback_str}")
+
+# اضافه کردن error handler به application
+application.add_error_handler(error_handler)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی به این ربات ندارید.')
