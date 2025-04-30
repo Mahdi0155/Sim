@@ -2,6 +2,8 @@ import os
 import logging
 import traceback
 from datetime import timedelta
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -15,7 +17,7 @@ CHANNEL_USERNAME = '@hottof'
 ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
 
 # مراحل گفتگو
-WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
+WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE, WAITING_FOR_WATERMARK = range(5)
 
 # لاگ
 logging.basicConfig(level=logging.INFO)
@@ -62,7 +64,7 @@ async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['caption'] = final_caption
 
     keyboard = ReplyKeyboardMarkup(
-        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
+        [['ارسال در کانال', 'ارسال در آینده'], ['اضافه کردن واترمارک', 'برگشت به ابتدا']],
         resize_keyboard=True
     )
 
@@ -86,12 +88,27 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == 'ارسال در آینده':
         await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_SCHEDULE
+    elif text == 'اضافه کردن واترمارک':
+        await update.message.reply_text('لطفاً محل قرارگیری واترمارک را انتخاب کنید: A, B, C, D, E')
+        return WAITING_FOR_WATERMARK
     elif text == 'برگشت به ابتدا':
         await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
     else:
         await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
         return WAITING_FOR_ACTION
+
+async def handle_watermark(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    watermark_position = update.message.text.strip().upper()
+
+    if watermark_position not in ['A', 'B', 'C', 'D', 'E']:
+        await update.message.reply_text('لطفاً یکی از گزینه‌های معتبر (A, B, C, D, E) را وارد کنید.')
+        return WAITING_FOR_WATERMARK
+
+    context.user_data['watermark_position'] = watermark_position
+
+    await update.message.reply_text('واترمارک اضافه شد. اکنون لطفاً گزینه‌های بعدی را انتخاب کنید.', reply_markup=ReplyKeyboardRemove())
+    return WAITING_FOR_ACTION
 
 async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -119,11 +136,21 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
     media_type = data['media_type']
     file_id = data['file_id']
     caption = data['caption']
+    watermark_position = data.get('watermark_position', 'E')
+
+    # Apply watermark to the image/video
+    file = await context.bot.get_file(file_id)
+    file_path = await file.download()
 
     if media_type == 'photo':
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+        image = Image.open(file_path)
+        image = apply_watermark(image, watermark_position)
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=img_byte_arr, caption=caption)
     elif media_type == 'video':
-        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_path, caption=caption)
 
 async def send_scheduled(context: CallbackContext):
     try:
@@ -131,13 +158,48 @@ async def send_scheduled(context: CallbackContext):
         media_type = data['media_type']
         file_id = data['file_id']
         caption = data['caption']
+        watermark_position = data.get('watermark_position', 'E')
+
+        # Apply watermark to the image/video
+        file = await context.bot.get_file(file_id)
+        file_path = await file.download()
 
         if media_type == 'photo':
-            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+            image = Image.open(file_path)
+            image = apply_watermark(image, watermark_position)
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG')
+            img_byte_arr.seek(0)
+            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=img_byte_arr, caption=caption)
         elif media_type == 'video':
-            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_path, caption=caption)
     except Exception as e:
         logger.error("خطا در send_scheduled:\n%s", traceback.format_exc())
+
+def apply_watermark(image: Image, position: str) -> Image:
+    watermark_text = "تُفِ داغ"
+    opacity = 100  # می‌توان میزان شفافیت را تغییر داد
+    font = ImageFont.load_default()
+    draw = ImageDraw.Draw(image, 'RGBA')
+
+    text_width, text_height = draw.textsize(watermark_text, font=font)
+    width, height = image.size
+
+    # موقعیت قرارگیری واترمارک
+    if position == 'A':
+        x, y = 10, 10
+    elif position == 'B':
+        x, y = width - text_width - 10, 10
+    elif position == 'C':
+        x, y = width - text_width - 10, height - text_height - 10
+    elif position == 'D':
+        x, y = 10, height - text_height - 10
+    elif position == 'E':
+        x, y = (width - text_width) // 2, (height - text_height) // 2
+
+    draw.text((x, y), watermark_text, font=font, fill=(255, 255, 255, opacity))
+
+    return image
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
@@ -152,6 +214,7 @@ def main():
             WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
             WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
             WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
+            WAITING_FOR_WATERMARK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_watermark)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
