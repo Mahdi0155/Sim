@@ -99,7 +99,7 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job_data = context.user_data.copy()
 
         context.job_queue.run_once(
-            lambda ctx: context.application.create_task(send_scheduled(ctx)),
+            send_scheduled,
             when=timedelta(minutes=minutes),
             data=job_data
         )
