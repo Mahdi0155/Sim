@@ -17,20 +17,17 @@ CHANNEL_USERNAME = '@hottof'
 ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
 
 # مراحل گفتگو
-WAITING_FOR_MEDIA, ASK_WATERMARK, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(5)
+WAITING_FOR_MEDIA, ASK_WATERMARK, CHOOSE_WATERMARK_POS, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(6)
 
 # لاگ
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
     _ = application.job_queue
 
-# تعریف ربات
 application = Application.builder().token(TOKEN).post_init(post_init).build()
 
-# دستورات ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی به این ربات ندارید.')
@@ -57,10 +54,8 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if media_type == 'photo':
         keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ بله", callback_data="watermark_yes"),
-                InlineKeyboardButton("❌ خیر", callback_data="watermark_no")
-            ]
+            [InlineKeyboardButton("✅ بله", callback_data="watermark_yes"),
+             InlineKeyboardButton("❌ خیر", callback_data="watermark_no")]
         ])
         await update.message.reply_text("آیا می‌خواهید واترمارک روی عکس باشد؟", reply_markup=keyboard)
         return ASK_WATERMARK
@@ -72,8 +67,29 @@ async def handle_watermark_choice(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     choice = query.data
-    context.user_data['add_watermark'] = (choice == 'watermark_yes')
 
+    if choice == 'watermark_yes':
+        context.user_data['add_watermark'] = True
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("A", callback_data="pos_a"),
+             InlineKeyboardButton("E", callback_data="pos_e"),
+             InlineKeyboardButton("B", callback_data="pos_b")],
+            [InlineKeyboardButton("C", callback_data="pos_c"),
+             InlineKeyboardButton(" ", callback_data="ignore"),
+             InlineKeyboardButton("D", callback_data="pos_d")]
+        ])
+        await query.edit_message_text("واترمارک در کجا قرار بگیرد؟", reply_markup=keyboard)
+        return CHOOSE_WATERMARK_POS
+    else:
+        context.user_data['add_watermark'] = False
+        await query.edit_message_text("لطفاً کپشن مورد نظر خود را بنویسید:")
+        return WAITING_FOR_CAPTION
+
+async def handle_position_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['watermark_position'] = query.data
     await query.edit_message_text("لطفاً کپشن مورد نظر خود را بنویسید:")
     return WAITING_FOR_CAPTION
 
@@ -164,13 +180,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-# اجرای اصلی
 def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
             ASK_WATERMARK: [CallbackQueryHandler(handle_watermark_choice)],
+            CHOOSE_WATERMARK_POS: [CallbackQueryHandler(handle_position_choice)],
             WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
             WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
             WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
