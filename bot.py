@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 # اطلاعات ربات
-TOKEN = os.getenv("BOT_TOKEN")  # مطمئن شو این مقدار به‌درستی در Render تنظیم شده
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6378124502, 6387942633, 5459406429, 7189616405]
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
-    _ = application.job_queue  # اجباری برای اطمینان از فعال بودن job_queue
+    _ = application.job_queue
 
 # تعریف ربات
 application = Application.builder().token(TOKEN).post_init(post_init).build()
@@ -95,11 +95,11 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        minutes = int(update.message.text)
+        minutes = int(update.message.text.strip())
         job_data = context.user_data.copy()
 
-        context.application.job_queue.run_once(
-            send_scheduled,
+        context.job_queue.run_once(
+            lambda ctx: context.application.create_task(send_scheduled(ctx)),
             when=timedelta(minutes=minutes),
             data=job_data
         )
