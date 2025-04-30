@@ -15,9 +15,8 @@ def add_watermark(image_path, position_code):
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         font = ImageFont.truetype(font_path, font_size)
 
-        # اندازه متن با textbbox
-        bbox = draw.textbbox((0, 0), watermark_text, font=font)
-        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        # محاسبه اندازه متن
+        text_w, text_h = draw.textsize(watermark_text, font=font)
         w, h = base.size
         margin = 10
 
@@ -33,8 +32,8 @@ def add_watermark(image_path, position_code):
 
         # سایه (مشکی نیمه‌شفاف) + متن اصلی سفید
         shadow_offset = 2
-        draw.text((position[0] + shadow_offset, position[1] + shadow_offset), watermark_text, font=font, fill=(0, 0, 0, 120))
-        draw.text(position, watermark_text, font=font, fill=(255, 255, 255, 200))
+        draw.text((position[0] + shadow_offset, position[1] + shadow_offset), watermark_text, font=font, fill=(0, 0, 0, 120))  # سایه
+        draw.text(position, watermark_text, font=font, fill=(255, 255, 255, 200))  # متن سفید
 
         # ترکیب تصویر و لایه واترمارک
         watermarked = Image.alpha_composite(base, txt_layer)
