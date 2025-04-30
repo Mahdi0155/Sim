@@ -2,12 +2,12 @@ import os
 import logging
 import traceback
 from datetime import timedelta
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters,
     ContextTypes, ConversationHandler, CallbackContext
 )
 
@@ -17,51 +17,11 @@ CHANNEL_USERNAME = '@hottof'
 ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
 
 # مراحل گفتگو
-WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
+WAITING_FOR_MEDIA, ASK_WATERMARK, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(5)
 
 # لاگ
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# محل واترمارک‌ها
-WATERMARK_POSITIONS = {
-    'A': (10, 10),
-    'B': (10, 100),
-    'C': (10, 200),
-    'D': (100, 10),
-    'E': (100, 100),
-}
-
-# تابع برای اعمال واترمارک روی تصویر
-def apply_watermark(image_bytes, position='E'):
-    try:
-        # تبدیل بایت‌ها به تصویر
-        image = Image.open(BytesIO(image_bytes))
-        
-        # استفاده از یک فونت پیش‌فرض
-        font = ImageFont.load_default()
-        draw = ImageDraw.Draw(image)
-        
-        # رنگ و شفافیت (opacity) واترمارک
-        watermark_text = "Hottof"
-        text_width, text_height = draw.textsize(watermark_text, font=font)
-        text_position = WATERMARK_POSITIONS.get(position, (100, 100))  # موقعیت پیش‌فرض 'E'
-        
-        # اعمال رنگ سفید با حاشیه مشکی
-        draw.text((text_position[0] + 2, text_position[1] + 2), watermark_text, font=font, fill="black")
-        draw.text((text_position[0] - 2, text_position[1] - 2), watermark_text, font=font, fill="black")
-        draw.text(text_position, watermark_text, font=font, fill="white")
-
-        # تبدیل دوباره به بایت‌ها
-        output = BytesIO()
-        image.save(output, format="PNG")
-        output.seek(0)
-        return output.getvalue()
-    
-    except Exception as e:
-        print(f"Error applying watermark: {e}")
-        return image_bytes  # اگر مشکلی بود، تصویر اصلی رو برمی‌گرداند
-
 
 # post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
@@ -95,22 +55,31 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['file_id'] = file_id
     context.user_data['media_type'] = media_type
 
-    # دانلود فایل عکس
-    file = await context.bot.get_file(file_id)
-    image_bytes = await file.download_as_bytearray()
+    if media_type == 'photo':
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ بله", callback_data="watermark_yes"),
+                InlineKeyboardButton("❌ خیر", callback_data="watermark_no")
+            ]
+        ])
+        await update.message.reply_text("آیا می‌خواهید واترمارک روی عکس باشد؟", reply_markup=keyboard)
+        return ASK_WATERMARK
+    else:
+        await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
+        return WAITING_FOR_CAPTION
 
-    # اعمال واترمارک روی عکس
-    watermarked_image = apply_watermark(image_bytes, 'E')  # انتخاب موقعیت پیش‌فرض E
+async def handle_watermark_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    choice = query.data
+    context.user_data['add_watermark'] = (choice == 'watermark_yes')
 
-    # ذخیره تصویر واترمارک‌دار در حافظه
-    context.user_data['photo_bytes'] = watermarked_image
-
-    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
+    await query.edit_message_text("لطفاً کپشن مورد نظر خود را بنویسید:")
     return WAITING_FOR_CAPTION
 
 async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.text
-    final_caption = caption + "\n\n🔥@hottof | تُفِ داغ"
+    final_caption = caption + "\n\n\ud83d\udd25@hottof | \u062a\u064f\u0641\u0650 \u062f\u0627\u063a"
     context.user_data['caption'] = final_caption
 
     keyboard = ReplyKeyboardMarkup(
@@ -122,7 +91,7 @@ async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = context.user_data['file_id']
 
     if media_type == 'photo':
-        await update.message.reply_photo(context.user_data['photo_bytes'], caption=final_caption, reply_markup=keyboard)
+        await update.message.reply_photo(file_id, caption=final_caption, reply_markup=keyboard)
     elif media_type == 'video':
         await update.message.reply_video(file_id, caption=final_caption, reply_markup=keyboard)
 
@@ -169,19 +138,13 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
     media_type = data['media_type']
+    file_id = data['file_id']
     caption = data['caption']
 
-    # استفاده از تصویر واترمارک‌دار که در حافظه ذخیره شده
-    watermarked_image = data['photo_bytes']
-
-    # ارسال تصویر واترمارک‌دار
     if media_type == 'photo':
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=watermarked_image, caption=caption)
+        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
     elif media_type == 'video':
-        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=watermarked_image, caption=caption)
-
-    # بعد از ارسال، داده‌ها از حافظه پاک می‌شود
-    del context.user_data['photo_bytes']
+        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
 async def send_scheduled(context: CallbackContext):
     try:
@@ -207,6 +170,7 @@ def main():
         entry_points=[CommandHandler('start', start)],
         states={
             WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
+            ASK_WATERMARK: [CallbackQueryHandler(handle_watermark_choice)],
             WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
             WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
             WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
