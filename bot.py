@@ -1,15 +1,16 @@
 import os
 import logging
+import traceback
 from datetime import timedelta
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler
+    ContextTypes, ConversationHandler, CallbackContext
 )
 
 # اطلاعات ربات
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")  # مطمئن شو این مقدار به‌درستی در Render تنظیم شده
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6378124502, 6387942633, 5459406429, 7189616405]
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
-    _ = application.job_queue  # اطمینان از فعال بودن job_queue
+    _ = application.job_queue  # اجباری برای اطمینان از فعال بودن job_queue
 
 # تعریف ربات
 application = Application.builder().token(TOKEN).post_init(post_init).build()
@@ -97,7 +98,7 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         minutes = int(update.message.text)
         job_data = context.user_data.copy()
 
-        await context.application.job_queue.run_once(
+        context.application.job_queue.run_once(
             send_scheduled,
             when=timedelta(minutes=minutes),
             data=job_data
@@ -105,8 +106,9 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
-    except ValueError:
-        await update.message.reply_text('فقط عدد وارد کنید.')
+    except Exception as e:
+        logger.error("خطا در handle_schedule:\n%s", traceback.format_exc())
+        await update.message.reply_text('خطا در زمان‌بندی. فقط عدد وارد کنید یا دوباره تلاش کنید.')
         return WAITING_FOR_SCHEDULE
 
 async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
@@ -120,16 +122,19 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
     elif media_type == 'video':
         await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
-async def send_scheduled(context: ContextTypes.DEFAULT_TYPE):
-    job_data = context.job.data
-    media_type = job_data['media_type']
-    file_id = job_data['file_id']
-    caption = job_data['caption']
+async def send_scheduled(context: CallbackContext):
+    try:
+        data = context.job.data
+        media_type = data['media_type']
+        file_id = data['file_id']
+        caption = data['caption']
 
-    if media_type == 'photo':
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-    elif media_type == 'video':
-        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+        if media_type == 'photo':
+            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+        elif media_type == 'video':
+            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+    except Exception as e:
+        logger.error("خطا در send_scheduled:\n%s", traceback.format_exc())
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
