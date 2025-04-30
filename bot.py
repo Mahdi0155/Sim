@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 # اطلاعات ربات
-TOKEN = os.getenv("7413532622:AAEs5KZZjPIpSTcPW9fzdA2gatvZgzfYu7M")
+TOKEN = os.getenv("7413532622:AAGkQ_qKmb9-6VFPJIE05ZDvhWhfn7SuvCc")
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6378124502, 6387942633, 5459406429, 7189616405]
 
