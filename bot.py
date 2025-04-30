@@ -23,6 +23,11 @@ WAITING_FOR_MEDIA, ASK_WATERMARK, ASK_POSITION, WAITING_FOR_CAPTION, WAITING_FOR
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# قبل از شروع، پوشه temp را ایجاد می‌کنیم اگر وجود نداشته باشد
+temp_dir = "temp"
+if not os.path.exists(temp_dir):
+    os.makedirs(temp_dir)
+
 async def post_init(application: Application):
     _ = application.job_queue
 
