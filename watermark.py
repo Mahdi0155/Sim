@@ -9,6 +9,11 @@ def add_watermark(image_path, position_code):
     # بارگذاری فونت (شما باید فایل فونت .ttf را داشته باشید)
     font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'  # یا مسیر فونت خودتان
     font_size = 50
+    
+    # چک کردن دسترسی به فونت
+    if not os.path.exists(font_path):
+        raise FileNotFoundError(f"فونت در مسیر {font_path} یافت نشد")
+    
     font = ImageFont.truetype(font_path, font_size)
 
     # تنظیمات برای واترمارک
@@ -37,7 +42,9 @@ def add_watermark(image_path, position_code):
         position = (width - font.getsize(watermark_text)[0] - margin, height - font.getsize(watermark_text)[1] - margin)
     elif position_code == 'e':  # وسط
         position = (width // 2 - font.getsize(watermark_text)[0] // 2, height // 2 - font.getsize(watermark_text)[1] // 2)
-
+    else:
+        raise ValueError("کد موقعیت واترمارک نامعتبر است. از 'a', 'b', 'c', 'd' یا 'e' استفاده کنید.")
+    
     # رسم حاشیه (Border)
     border_offset = 2
     for dx in range(-border_offset, border_offset + 1):
