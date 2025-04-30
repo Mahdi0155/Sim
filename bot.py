@@ -104,7 +104,10 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data=job_data
         )
 
-        await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text(
+            f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.\n\nلطفاً پیام بعدی را ارسال کنید.',
+            reply_markup=ReplyKeyboardRemove()
+        )
         return WAITING_FOR_MEDIA
     except Exception as e:
         logger.error("خطا در handle_schedule:\n%s", traceback.format_exc())
