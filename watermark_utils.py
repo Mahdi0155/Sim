@@ -1,3 +1,4 @@
+# bot.py
 import os
 import logging
 import traceback
@@ -10,9 +11,9 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters,
     ContextTypes, ConversationHandler, CallbackContext
 )
-from watermark import add_watermark  # فایل خارجی که واترمارک را اعمال می‌کند
+from watermark_utils import add_watermark  # فایل جدید واترمارک
 
-# اطلاعات ربات
+# تنظیمات ربات
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
@@ -23,7 +24,7 @@ WAITING_FOR_MEDIA, ASK_WATERMARK, ASK_POSITION, WAITING_FOR_CAPTION, WAITING_FOR
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# قبل از شروع، پوشه temp را ایجاد می‌کنیم اگر وجود نداشته باشد
+# ایجاد پوشه temp در صورت نبود
 temp_dir = "temp"
 if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)
@@ -33,16 +34,14 @@ async def post_init(application: Application):
 
 application = Application.builder().token(TOKEN).post_init(post_init).build()
 
-# تابع برای مدیریت خطاها
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"استثنا در پردازش: {context.error}")
-    # لاگ کردن traceback کامل برای دیباگ بهتر
+    logger.error(f"خطا: {context.error}")
     traceback_str = ''.join(traceback.format_exception(None, context.error, context.error.__traceback__))
-    logger.error(f"جزئیات خطا: {traceback_str}")
+    logger.error(f"جزئیات: {traceback_str}")
 
-# اضافه کردن error handler به application
 application.add_error_handler(error_handler)
 
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی به این ربات ندارید.')
@@ -149,10 +148,8 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
         path = data['processed_image_path']
         with open(path, 'rb') as f:
             await context.bot.send_photo(CHANNEL_USERNAME, photo=f, caption=data['caption'])
-        try: 
-            os.remove(path)  # حذف فایل پس از ارسال
-        except Exception as e: 
-            logger.error(f"حذف نشد: {e}")
+        try: os.remove(path)
+        except Exception as e: logger.error(f"حذف نشد: {e}")
     elif data['media_type'] == 'photo':
         await context.bot.send_photo(CHANNEL_USERNAME, photo=data['file_id'], caption=data['caption'])
     elif data['media_type'] == 'video':
@@ -164,10 +161,8 @@ async def send_scheduled(context: CallbackContext):
         path = data['processed_image_path']
         with open(path, 'rb') as f:
             await context.bot.send_photo(CHANNEL_USERNAME, photo=f, caption=data['caption'])
-        try: 
-            os.remove(path)  # حذف فایل پس از ارسال
-        except Exception as e: 
-            logger.error(f"حذف نشد: {e}")
+        try: os.remove(path)
+        except Exception as e: logger.error(f"حذف نشد: {e}")
     elif data['media_type'] == 'photo':
         await context.bot.send_photo(CHANNEL_USERNAME, photo=data['file_id'], caption=data['caption'])
     elif data['media_type'] == 'video':
