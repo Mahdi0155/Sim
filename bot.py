@@ -1,157 +1,158 @@
+import os
 import logging
-import random
-import string
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, filters,
+    ContextTypes, ConversationHandler, CallbackContext
+)
+from datetime import timedelta
 
-API_TOKEN = '7086274656:AAEkxL0Xwktb_PVddppdNZ8S88ggGNpRMqI'
+# اطلاعات ربات
+TOKEN = '7413532622:AAEs5KZZjPIpSTcPW9fzdA2gatvZgzfYu7M'
+CHANNEL_USERNAME = '@hottof'
+ADMINS = [6378124502, 6387942633, 5459406429, 7189616405]
 
-ADMINS = [6387942633, 6039863213, 5459406429, 7189616405]
+# مراحل گفتگو
+WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
 
+# لاگ‌برداری
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+# تعریف ربات
+application = Application.builder().token(TOKEN).build()
 
-# حافظه ساده برای نگه داشتن اطلاعات فایل‌ها
-file_storage = {}
+# شروع
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text('شما دسترسی به این ربات ندارید.')
+        return ConversationHandler.END
+    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.')
+    return WAITING_FOR_MEDIA
 
-# حالت‌ها
-user_states = {}
+# دریافت مدیا
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        return ConversationHandler.END
 
-# متن ثابت
-FIXED_TEXT = "@hottof | تُفِ داغ"
-
-# دکمه پنل ادمین
-admin_panel_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-admin_panel_keyboard.add(types.KeyboardButton("➕ آپلود فایل"))
-
-# مرحله گرفتن اطلاعات
-class UploadStep:
-    WAITING_FILE = 1
-    WAITING_CAPTION = 2
-    WAITING_COVER = 3
-
-@dp.message_handler(commands=['start'])
-async def start_command(message: types.Message):
-    args = message.get_args()
-    if args.startswith('f_'):
-        file_code = args[2:]
-        file_info = file_storage.get(file_code)
-        if file_info:
-            try:
-                await bot.send_chat_action(message.chat.id, types.ChatActions.UPLOAD_VIDEO)
-                await bot.send_message(
-                    chat_id=message.chat.id,
-                    text="حال میکنی عضویت اجباری ندارماا😁",
-                )
-                await bot.send_chat_action(message.chat.id, types.ChatActions.UPLOAD_DOCUMENT)
-                await bot.send_document(
-                    chat_id=message.chat.id,
-                    document=file_info['file_id']
-                )
-            except Exception as e:
-                await message.answer("خطایی رخ داد!")
-        else:
-            await message.answer("فایل یافت نشد یا منقضی شده است.")
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+        media_type = 'photo'
+    elif update.message.video:
+        file_id = update.message.video.file_id
+        media_type = 'video'
     else:
-        await message.answer("خوش آمدید!")
+        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
+        return WAITING_FOR_MEDIA
 
-@dp.message_handler(commands=['panel'])
-async def panel_command(message: types.Message):
-    if message.from_user.id in ADMINS:
-        await message.answer("سلام آقا مدیر شومبولت دهنم", reply_markup=admin_panel_keyboard)
+    context.user_data['file_id'] = file_id
+    context.user_data['media_type'] = media_type
+
+    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
+    return WAITING_FOR_CAPTION
+
+# دریافت کپشن
+async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = update.message.text
+    final_caption = caption + "\n\n@hottof | تُفِ داغ"
+    context.user_data['caption'] = final_caption
+
+    keyboard = ReplyKeyboardMarkup(
+        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
+        resize_keyboard=True
+    )
+
+    media_type = context.user_data['media_type']
+    file_id = context.user_data['file_id']
+
+    if media_type == 'photo':
+        await update.message.reply_photo(file_id, caption=final_caption, reply_markup=keyboard)
+    elif media_type == 'video':
+        await update.message.reply_video(file_id, caption=final_caption, reply_markup=keyboard)
+
+    return WAITING_FOR_ACTION
+
+# دریافت دستور کاربر
+async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text == 'ارسال در کانال':
+        await send_to_channel(context)
+        await update.message.reply_text('پیام ارسال شد. لطفاً مدیا بعدی را بفرستید.', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_MEDIA
+    elif text == 'ارسال در آینده':
+        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_SCHEDULE
+    elif text == 'برگشت به ابتدا':
+        await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_MEDIA
     else:
-        await message.answer("بچه خوشکل بیا کیرمو بخور")
+        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
+        return WAITING_FOR_ACTION
 
-@dp.message_handler(lambda message: message.text == "➕ آپلود فایل")
-async def upload_file_start(message: types.Message):
-    if message.from_user.id in ADMINS:
-        user_states[message.from_user.id] = {'step': UploadStep.WAITING_FILE}
-        await message.answer("سوپر رو بفرست قربون خایه هات برم 🥚🥚")
+# زمان‌بندی
+async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        minutes = int(update.message.text)
+        context.job_queue.run_once(send_scheduled, when=timedelta(minutes=minutes), data=context.user_data.copy())
+        await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_MEDIA
+    except ValueError:
+        await update.message.reply_text('فقط عدد وارد کنید.')
+        return WAITING_FOR_SCHEDULE
 
-@dp.message_handler(content_types=types.ContentType.ANY)
-async def handle_all_messages(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in ADMINS:
-        return
+# ارسال به کانال
+async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
+    data = context.user_data
+    media_type = data['media_type']
+    file_id = data['file_id']
+    caption = data['caption']
 
-    state = user_states.get(user_id)
+    if media_type == 'photo':
+        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+    elif media_type == 'video':
+        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
-    if not state:
-        return
+# ارسال زمان‌بندی‌شده
+async def send_scheduled(context: CallbackContext):
+    data = context.job.data
+    media_type = data['media_type']
+    file_id = data['file_id']
+    caption = data['caption']
 
-    step = state['step']
+    bot = context.bot
+    if media_type == 'photo':
+        await bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+    elif media_type == 'video':
+        await bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
-    if step == UploadStep.WAITING_FILE:
-        if message.content_type not in [ 'video', ]:
-            await message.answer(" داداش سوپر رو بده بیاد این کصخل بازیا چیه")
-            return
-        
-        # بررسی سایز فایل
-        file_size = 0
-        if message.document:
-            file_size = message.document.file_size
-        elif message.video:
-            file_size = message.video.file_size
-        elif message.photo:
-            file_size = message.photo[-1].file_size
+# لغو گفتگو
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
 
-        if file_size > 200 * 1024 * 1024:
-            await message.answer("جاکش کمتر از ۲۰۰ مگ فایل بفرس")
-            return
-        
-        # ذخیره اطلاعات فایل
-        if message.document:
-            state['file_id'] = message.document.file_id
-        elif message.video:
-            state['file_id'] = message.video.file_id
-        elif message.photo:
-            state['file_id'] = message.photo[-1].file_id
+# اجرای اصلی
+def main():
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
+            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
+            WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
+            WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
 
-        state['step'] = UploadStep.WAITING_CAPTION
-        await message.answer("عکس کاور هم بفرست شومبول طلا")
+    application.add_handler(conv_handler)
 
-    elif step == UploadStep.WAITING_CAPTION:
-        state['caption'] = message.text
-        state['step'] = UploadStep.WAITING_COVER
-        await message.answer("ارباب کپشن سکسیتو بزن 🤤 آیدی چنلو خودم میزنم")
+    WEBHOOK_URL = 'https://ooooo-fiwm.onrender.com/'  # لینک وب‌هوک
 
-    elif step == UploadStep.WAITING_COVER:
-        if message.content_type != 'photo':
-            await message.answer("چیکار داری میکنی دلقک عکس کاور بفرست")
-            return
-
-        cover_file_id = message.photo[-1].file_id
-        file_id = state['file_id']
-        caption_text = f"{state['caption']}\n\n{FIXED_TEXT}"
-
-        # ساخت کد اختصاصی
-        code = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-        file_storage[code] = {
-            'file_id': file_id,
-        }
-
-        # ساخت لینک
-        link = f"https://t.me/{(await bot.get_me()).username}?start=f_{code}"
-
-        # دکمه مشاهده فایل
-        buttons = InlineKeyboardMarkup().add(
-            InlineKeyboardButton(text="مشاهده فایل", url=link)
-        )
-
-        # ارسال پیام نهایی
-        await bot.send_photo(
-            chat_id=message.chat.id,
-            photo=cover_file_id,
-            caption=caption_text,
-            reply_markup=buttons
-        )
-
-        await message.answer("بفرما قربان فایل نهایی خدمت شما 🍌")
-
-        # پاک کردن وضعیت کاربر
-        user_states.pop(user_id, None)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+        webhook_url=WEBHOOK_URL
+    )
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    main()
