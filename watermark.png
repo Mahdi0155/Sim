@@ -1,0 +1,26 @@
+from PIL import Image, ImageDraw, ImageFont
+
+# اندازه تصویر و رنگ پس زمینه
+width, height = 300, 100
+background_color = (255, 255, 255, 0)  # رنگ سفید با شفافیت
+
+# ایجاد تصویر جدید با پس‌زمینه شفاف
+img = Image.new('RGBA', (width, height), background_color)
+
+# رسم متن روی تصویر
+draw = ImageDraw.Draw(img)
+font = ImageFont.load_default()  # استفاده از فونت پیش‌فرض
+
+# متن واترمارک
+text = "My Watermark"
+text_color = (255, 0, 0, 128)  # قرمز با شفافیت (اوپسیتی)
+
+# موقعیت متن (وسط تصویر)
+text_width, text_height = draw.textsize(text, font)
+position = ((width - text_width) // 2, (height - text_height) // 2)
+
+# افزودن متن به تصویر
+draw.text(position, text, font=font, fill=text_color)
+
+# ذخیره فایل واترمارک به صورت PNG
+img.save('watermark.png', format='PNG')
