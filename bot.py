@@ -1,15 +1,16 @@
 import os
 import logging
+import traceback
 from datetime import timedelta
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler
+    ContextTypes, ConversationHandler, CallbackContext
 )
 
 # اطلاعات ربات
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")  # مطمئن شو این مقدار به‌درستی در Render تنظیم شده
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6378124502, 6387942633, 5459406429, 7189616405]
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # post_init برای فعال‌سازی job_queue
 async def post_init(application: Application):
-    pass
+    _ = application.job_queue  # اجباری برای اطمینان از فعال بودن job_queue
 
 # تعریف ربات
 application = Application.builder().token(TOKEN).post_init(post_init).build()
@@ -30,9 +31,9 @@ application = Application.builder().token(TOKEN).post_init(post_init).build()
 # دستورات ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
-        await update.message.reply_text('شما دسترسی به این ربات ندارید.\nYou are not authorized to use this bot.')
+        await update.message.reply_text('شما دسترسی به این ربات ندارید.')
         return ConversationHandler.END
-    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.\nHi! Please forward a photo or video.')
+    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.')
     return WAITING_FOR_MEDIA
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,13 +47,13 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = update.message.video.file_id
         media_type = 'video'
     else:
-        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.\nOnly photo or video is accepted.')
+        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
         return WAITING_FOR_MEDIA
 
     context.user_data['file_id'] = file_id
     context.user_data['media_type'] = media_type
 
-    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:\nPlease enter your desired caption:')
+    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
     return WAITING_FOR_CAPTION
 
 async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,7 +62,7 @@ async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['caption'] = final_caption
 
     keyboard = ReplyKeyboardMarkup(
-        [['ارسال در کانال / Send now', 'ارسال در آینده / Schedule'], ['برگشت به ابتدا / Restart']],
+        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
         resize_keyboard=True
     )
 
@@ -78,37 +79,36 @@ async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    if text.startswith('ارسال در کانال') or text.startswith('Send now'):
+    if text == 'ارسال در کانال':
         await send_to_channel(context)
-        await update.message.reply_text('پیام ارسال شد. لطفاً مدیا بعدی را بفرستید.\nSent! Please send the next media.', reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text('پیام ارسال شد. لطفاً مدیا بعدی را بفرستید.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
-    elif text.startswith('ارسال در آینده') or text.startswith('Schedule'):
-        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:\nEnter time in minutes:', reply_markup=ReplyKeyboardRemove())
+    elif text == 'ارسال در آینده':
+        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_SCHEDULE
-    elif text.startswith('برگشت به ابتدا') or text.startswith('Restart'):
-        await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.\nCanceled. Please send media again.', reply_markup=ReplyKeyboardRemove())
+    elif text == 'برگشت به ابتدا':
+        await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
     else:
-        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.\nPlease select one of the options.')
+        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
         return WAITING_FOR_ACTION
 
 async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        minutes = int(update.message.text.strip())
+        minutes = int(update.message.text)
+        job_data = context.user_data.copy()
 
         context.application.job_queue.run_once(
             send_scheduled,
             when=timedelta(minutes=minutes),
-            data=context.user_data.copy()
+            data=job_data
         )
 
-        await update.message.reply_text(
-            f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.\nScheduled for {minutes} minutes later.',
-            reply_markup=ReplyKeyboardRemove()
-        )
+        await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
         return WAITING_FOR_MEDIA
-    except ValueError:
-        await update.message.reply_text('فقط عدد صحیح وارد کنید (مثلاً: 5).\nPlease enter a valid number (e.g., 5).')
+    except Exception as e:
+        logger.error("خطا در handle_schedule:\n%s", traceback.format_exc())
+        await update.message.reply_text('خطا در زمان‌بندی. فقط عدد وارد کنید یا دوباره تلاش کنید.')
         return WAITING_FOR_SCHEDULE
 
 async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
@@ -122,20 +122,22 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
     elif media_type == 'video':
         await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
 
-async def send_scheduled(context):
-    data = context.job.data
-    media_type = data['media_type']
-    file_id = data['file_id']
-    caption = data['caption']
+async def send_scheduled(context: CallbackContext):
+    try:
+        data = context.job.data
+        media_type = data['media_type']
+        file_id = data['file_id']
+        caption = data['caption']
 
-    bot = context.bot
-    if media_type == 'photo':
-        await bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-    elif media_type == 'video':
-        await bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+        if media_type == 'photo':
+            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
+        elif media_type == 'video':
+            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+    except Exception as e:
+        logger.error("خطا در send_scheduled:\n%s", traceback.format_exc())
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('لغو شد.\nCanceled.', reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 # اجرای اصلی
