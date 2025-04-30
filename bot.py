@@ -1,8 +1,8 @@
-# bot.py  
-import os  
-import logging  
-import traceback  
-from datetime import timedelta  
+# bot.py
+import os
+import logging
+import traceback
+from datetime import timedelta
 from telegram import (  
     Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,  
     InlineKeyboardMarkup, InlineKeyboardButton  
@@ -24,9 +24,11 @@ WAITING_FOR_MEDIA, ASK_WATERMARK, ASK_POSITION, WAITING_FOR_CAPTION, WAITING_FOR
 logging.basicConfig(level=logging.INFO)  
 logger = logging.getLogger(__name__)  
   
-# ایجاد پوشه temp در صورت نبود  
-temp_dir = "temp"  
-if not os.path.exists(temp_dir):  
+# ایجاد پوشه temp در صورت نبود
+temp_dir = "temp"
+if os.path.exists(temp_dir) and not os.path.isdir(temp_dir):
+    os.remove(temp_dir)  # حذف فایل temp اگر فایل باشه
+if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)  
   
 async def post_init(application: Application):  
@@ -195,4 +197,4 @@ def main():
             WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],  
             ASK_WATERMARK: [CallbackQueryHandler(handle_watermark_choice)],  
             ASK_POSITION: [CallbackQueryHandler(handle_watermark_position)],  
-            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption
+            WAITING_FOR_CAPTION
