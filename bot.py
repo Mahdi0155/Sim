@@ -1,4 +1,3 @@
-# bot.py
 import os
 import logging
 import traceback
@@ -96,7 +95,18 @@ async def handle_watermark_position(update: Update, context: ContextTypes.DEFAUL
     file_id = context.user_data['file_id']
     photo = await context.bot.get_file(file_id)
     path = f"temp/{file_id}.jpg"
-    await photo.download_to_drive(path)
+
+    # دانلود فایل و بررسی وجود فایل
+    try:
+        await photo.download_to_drive(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"فایل در مسیر {path} یافت نشد.")
+        logger.info(f"فایل دانلود شده: {path}")
+    except Exception as e:
+        logger.error(f"مشکلی در دانلود فایل رخ داد: {e}")
+        await query.edit_message_text("خطا در دانلود فایل. لطفاً دوباره تلاش کنید.")
+        return WAITING_FOR_MEDIA
+
     result_path = add_watermark(path, position_code)
     context.user_data['processed_image_path'] = result_path
 
