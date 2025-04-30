@@ -1,49 +1,67 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 
-def add_watermark(input_path, position_code):
-    base = Image.open(input_path).convert("RGBA")
-    width, height = base.size
+def add_watermark(image_path, position_code):
+    # بارگذاری تصویر اصلی
+    original = Image.open(image_path).convert("RGBA")
+    width, height = original.size
 
+    # بارگذاری فونت (شما باید فایل فونت .ttf را داشته باشید)
+    font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'  # یا مسیر فونت خودتان
+    font_size = 50
+    font = ImageFont.truetype(font_path, font_size)
+
+    # تنظیمات برای واترمارک
     watermark_text = "HotTof"
-    font_size = int(width * 0.05)
-    font = ImageFont.truetype("arial.ttf", font_size)
+    opacity = 77  # 30% opacity
+    watermark_color = (255, 255, 255, opacity)  # رنگ سفید با اوپسیتی 30%
+    border_color = (0, 0, 0)  # حاشیه مشکی
 
-    # واترمارک با اوپسیتی
-    text_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(text_layer)
+    # ساخت تصویر جدید با پس‌زمینه شفاف
+    watermark = Image.new("RGBA", original.size)
+    watermark.paste(original, (0, 0))
 
-    text_width, text_height = draw.textsize(watermark_text, font=font)
-    padding = int(font_size * 0.5)
+    # ایجاد یک Draw object برای رسم واترمارک
+    draw = ImageDraw.Draw(watermark, "RGBA")
 
-    positions = {
-        'a': (padding, padding),
-        'b': (width - text_width - padding, padding),
-        'c': (padding, height - text_height - padding),
-        'd': (width - text_width - padding, height - text_height - padding),
-        'e': ((width - text_width) // 2, (height - text_height) // 2)
-    }
+    # محاسبه موقعیت واترمارک بر اساس پارامتر position_code
+    margin = 10  # فاصله از لبه‌های تصویر
 
-    pos = positions.get(position_code, positions['e'])
+    if position_code == 'a':  # بالای سمت چپ
+        position = (margin, margin)
+    elif position_code == 'b':  # بالای سمت راست
+        position = (width - font.getsize(watermark_text)[0] - margin, margin)
+    elif position_code == 'c':  # پایین سمت چپ
+        position = (margin, height - font.getsize(watermark_text)[1] - margin)
+    elif position_code == 'd':  # پایین سمت راست
+        position = (width - font.getsize(watermark_text)[0] - margin, height - font.getsize(watermark_text)[1] - margin)
+    elif position_code == 'e':  # وسط
+        position = (width // 2 - font.getsize(watermark_text)[0] // 2, height // 2 - font.getsize(watermark_text)[1] // 2)
 
-    # حاشیه مشکی
-    shadow_offset = 1
-    for dx in [-shadow_offset, 0, shadow_offset]:
-        for dy in [-shadow_offset, 0, shadow_offset]:
+    # رسم حاشیه (Border)
+    border_offset = 2
+    for dx in range(-border_offset, border_offset + 1):
+        for dy in range(-border_offset, border_offset + 1):
             if dx != 0 or dy != 0:
-                draw.text((pos[0] + dx, pos[1] + dy), watermark_text, font=font, fill=(0, 0, 0, 100))
+                draw.text((position[0] + dx, position[1] + dy), watermark_text, font=font, fill=border_color)
 
-    # متن سفید با شفافیت
-    draw.text(pos, watermark_text, font=font, fill=(255, 255, 255, 80))
+    # رسم متن اصلی واترمارک
+    draw.text(position, watermark_text, font=font, fill=watermark_color)
 
-    # ترکیب لایه‌ها
-    combined = Image.alpha_composite(base, text_layer)
-    output_path = input_path.replace(".jpg", "_watermarked.jpg")
-    combined.convert("RGB").save(output_path, "JPEG")
+    # ترکیب تصویر اصلی و واترمارک
+    watermarked_image = Image.alpha_composite(original.convert("RGBA"), watermark)
 
-    try:
-        os.remove(input_path)
-    except Exception as e:
-        print(f"خطا در حذف فایل اصلی: {e}")
+    # ذخیره تصویر نهایی
+    output_path = image_path.replace(".jpg", "_watermarked.jpg").replace(".png", "_watermarked.png")
+    watermarked_image.save(output_path)
 
-    return output_path
+    # تبدیل مجدد تصویر به فرمت JPG
+    final_image = watermarked_image.convert("RGB")
+    final_image_path = output_path.replace(".png", ".jpg")
+    final_image.save(final_image_path)
+
+    # حذف فایل موقت PNG (در صورتی که فرمت PNG باشد)
+    if output_path.endswith(".png"):
+        os.remove(output_path)
+
+    return final_image_path
