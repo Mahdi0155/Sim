@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ایجاد پوشه temp در صورت نبود
 temp_dir = "temp"
 if os.path.exists(temp_dir) and not os.path.isdir(temp_dir):
-    os.remove(temp_dir)  # حذف فایل temp اگر فایل باشه
+    os.remove(temp_dir)
 if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)
 
@@ -41,6 +41,16 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"جزئیات: {traceback_str}")
 
 application.add_error_handler(error_handler)
+
+# حذف فایل با تأخیر
+async def delete_file_later(context: CallbackContext):
+    path = context.job.data
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            logger.info(f"فایل حذف شد: {path}")
+    except Exception as e:
+        logger.error(f"خطا در حذف فایل با تاخیر: {e}")
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,7 +106,6 @@ async def handle_watermark_position(update: Update, context: ContextTypes.DEFAUL
     photo = await context.bot.get_file(file_id)
     path = f"temp/{file_id}.jpg"
 
-    # دانلود فایل و بررسی وجود فایل
     try:
         await photo.download_to_drive(path)
         if not os.path.exists(path):
@@ -110,11 +119,7 @@ async def handle_watermark_position(update: Update, context: ContextTypes.DEFAUL
     result_path = add_watermark(path, position_code)
     context.user_data['processed_image_path'] = result_path
 
-    # حذف فایل اصلی بعد از پردازش
-    try:
-        os.remove(path)  # حذف فایل اصلی بعد از پردازش
-    except Exception as e:
-        logger.error(f"حذف فایل اصلی ناموفق بود: {e}")
+    context.job_queue.run_once(delete_file_later, timedelta(minutes=10), data=path)
 
     await query.edit_message_text("لطفاً کپشن مورد نظر خود را بنویسید:")
     return WAITING_FOR_CAPTION
@@ -166,13 +171,10 @@ async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
         path = data['processed_image_path']
         with open(path, 'rb') as f:
             await context.bot.send_photo(CHANNEL_USERNAME, photo=f, caption=data['caption'])
-        try:
-            os.remove(path)  # حذف فایل واترمارک شده
-            original_path = path.replace("_wm.jpg", ".jpg")
-            if os.path.exists(original_path):
-                os.remove(original_path)  # حذف فایل اصلی
-        except Exception as e:
-            logger.error(f"حذف فایل‌ها ناموفق بود: {e}")
+        context.job_queue.run_once(delete_file_later, timedelta(minutes=10), data=path)
+        original_path = path.replace("_wm.jpg", ".jpg")
+        if os.path.exists(original_path):
+            context.job_queue.run_once(delete_file_later, timedelta(minutes=10), data=original_path)
     elif data['media_type'] == 'photo':
         await context.bot.send_photo(CHANNEL_USERNAME, photo=data['file_id'], caption=data['caption'])
     elif data['media_type'] == 'video':
@@ -184,13 +186,10 @@ async def send_scheduled(context: CallbackContext):
         path = data['processed_image_path']
         with open(path, 'rb') as f:
             await context.bot.send_photo(CHANNEL_USERNAME, photo=f, caption=data['caption'])
-        try:
-            os.remove(path)  # حذف فایل واترمارک شده
-            original_path = path.replace("_wm.jpg", ".jpg")
-            if os.path.exists(original_path):
-                os.remove(original_path)  # حذف فایل اصلی
-        except Exception as e:
-            logger.error(f"حذف فایل‌ها ناموفق بود: {e}")
+        context.job_queue.run_once(delete_file_later, timedelta(minutes=10), data=path)
+        original_path = path.replace("_wm.jpg", ".jpg")
+        if os.path.exists(original_path):
+            context.job_queue.run_once(delete_file_later, timedelta(minutes=10), data=original_path)
     elif data['media_type'] == 'photo':
         await context.bot.send_photo(CHANNEL_USERNAME, photo=data['file_id'], caption=data['caption'])
     elif data['media_type'] == 'video':
