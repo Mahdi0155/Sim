@@ -2,6 +2,7 @@
 
 import os
 import time
+import sqlite3
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -9,9 +10,18 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 TOKEN = os.getenv("BOT_TOKEN_UPLOADER")
 CHANNELS = []
 ADMINS = [6387942633]
-VIDEOS = {}
 USER_STATS = {}
 
+# اتصال به دیتابیس
+conn = sqlite3.connect('videos.db')
+cursor = conn.cursor()
+
+# ایجاد جدول در دیتابیس
+cursor.execute('''CREATE TABLE IF NOT EXISTS videos
+                  (file_name TEXT PRIMARY KEY, file_id TEXT, caption TEXT, cover_id TEXT, created DATETIME)''')
+conn.commit()
+
+# اتصال ربات
 application = Application.builder().token(TOKEN).build()
 
 async def check_membership(user_id):
@@ -62,23 +72,27 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('uploading'):
         file_id = update.message.video.file_id
+        file_name = str(int(time.time()))  # اسم منحصر به فرد برای هر ویدیو
         context.user_data['file_id'] = file_id
-        context.user_data['file_name'] = str(int(time.time()))
+        context.user_data['file_name'] = file_name
         await update.message.reply_text("کپشن را ارسال کنید:")
         context.user_data['step'] = 'caption'
     elif context.user_data.get('step') == 'cover':
         cover_id = update.message.photo[-1].file_id if update.message.photo else None
         file_name = context.user_data['file_name']
-        VIDEOS[file_name] = {
-            'video': context.user_data['file_id'],
-            'caption': context.user_data['caption'],
-            'cover': cover_id,
-            'created': datetime.utcnow()
-        }
+        caption = context.user_data['caption']
+
+        # ذخیره شناسه ویدیو و اطلاعات مورد نیاز در دیتابیس
+        cursor.execute('''
+        INSERT OR REPLACE INTO videos (file_name, file_id, caption, cover_id, created)
+        VALUES (?, ?, ?, ?, ?)
+        ''', (file_name, context.user_data['file_id'], caption, cover_id, datetime.utcnow()))
+        conn.commit()
+
         btn = InlineKeyboardMarkup([
             [InlineKeyboardButton("بازگشت", callback_data="panel")]
         ])
-        await update.message.reply_photo(cover_id, caption=f"{context.user_data['caption']}\n\nمشاهده\n\n🔥@hottof | تُفِ داغ", reply_markup=btn)
+        await update.message.reply_photo(cover_id, caption=f"{caption}\n\nمشاهده\n\n🔥@hottof | تُفِ داغ", reply_markup=btn)
         context.user_data.clear()
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,4 +123,4 @@ application.run_webhook(
     listen="0.0.0.0",
     port=int(os.environ.get("PORT", 8080)),
     webhook_url='https://your-app-name.onrender.com/uploader'
-      )
+        )
