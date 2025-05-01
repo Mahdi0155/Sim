@@ -94,5 +94,5 @@ application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^[0-9]+$"),
 application.run_webhook(
     listen="0.0.0.0",
     port=int(os.environ.get("PORT", 8080)),
-    webhook_url='https://your-app-name.onrender.com/membership'
+    webhook_url='https://sim-dtlp.onrender.com/membership'
 )
