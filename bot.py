@@ -10,7 +10,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters,
     ContextTypes, ConversationHandler, CallbackContext
 )
-from watermark_utils import add_watermark
+from watermark_utils import add_watermark  # فایل جدید واترمارک
 
 # تنظیمات ربات
 TOKEN = os.getenv("BOT_TOKEN")
@@ -30,6 +30,18 @@ if os.path.exists(temp_dir) and not os.path.isdir(temp_dir):
 if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)
 
+async def post_init(application: Application):
+    _ = application.job_queue
+
+application = Application.builder().token(TOKEN).post_init(post_init).build()
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"خطا: {context.error}")
+    traceback_str = ''.join(traceback.format_exception(None, context.error, context.error.__traceback__))
+    logger.error(f"جزئیات: {traceback_str}")
+
+application.add_error_handler(error_handler)
+
 # حذف فایل با تأخیر
 async def delete_file_later(context: CallbackContext):
     path = context.job.data
@@ -40,12 +52,7 @@ async def delete_file_later(context: CallbackContext):
     except Exception as e:
         logger.error(f"خطا در حذف فایل با تاخیر: {e}")
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"خطا: {context.error}")
-    traceback_str = ''.join(traceback.format_exception(None, context.error, context.error.__traceback__))
-    logger.error(f"جزئیات: {traceback_str}")
-
-# دستورات و مراحل گفتگو (بدون تغییر)
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی به این ربات ندارید.')
@@ -192,48 +199,22 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-# ساختار جدید مخصوص Webhook و Flask برای اجرا در Render
-from flask import Flask, request
+def main():
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
+            ASK_WATERMARK: [CallbackQueryHandler(handle_watermark_choice)],
+            ASK_POSITION: [CallbackQueryHandler(handle_watermark_position)],
+            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
+            WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
+            WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
 
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return 'Bot is running!'
-
-@flask_app.route(f'/{TOKEN}', methods=['POST'])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
-    return 'ok'
-
-# تعریف application و هندلرها
-application = Application.builder().token(TOKEN).build()
-application.add_error_handler(error_handler)
-
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start)],
-    states={
-        WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
-        ASK_WATERMARK: [CallbackQueryHandler(handle_watermark_choice)],
-        ASK_POSITION: [CallbackQueryHandler(handle_watermark_position)],
-        WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
-        WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
-        WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)]
-)
-
-application.add_handler(conv_handler)
+    application.add_handler(conv_handler)
+    application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-
-    async def start():
-        await application.initialize()
-        await application.start()
-        await application.bot.set_webhook(url=f'https://sim-dtlp.onrender.com/{TOKEN}')
-
-    asyncio.run(start())
-    port = int(os.environ.get('PORT', 5000))
-    flask_app.run(host='0.0.0.0', port=port)
+    main()
