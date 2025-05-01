@@ -88,5 +88,5 @@ application.add_handler(CommandHandler("start", start))
 application.run_webhook(
     listen="0.0.0.0",
     port=int(os.environ.get("PORT", 8080)),
-    webhook_url='https://your-app-name.onrender.com/sender'
+    webhook_url='https://sim-dtlp.onrender.com/sender'
 )
