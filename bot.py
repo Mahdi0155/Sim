@@ -1,7 +1,5 @@
 from flask import Flask, request
 import requests
-import threading
-import time
 
 TOKEN = "YOUR_TOKEN_HERE"
 BOT_USERNAME = "HotTofBot"
@@ -36,7 +34,12 @@ def delete_message(chat_id, message_id):
     requests.post(URL + "deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
 
 def send_video(chat_id, file_id, caption, thumb=None):
-    payload = {"chat_id": chat_id, "video": file_id, "caption": caption + CHANNEL_TAG, "parse_mode": "HTML"}
+    payload = {
+        "chat_id": chat_id,
+        "video": file_id,
+        "caption": caption + CHANNEL_TAG,
+        "parse_mode": "HTML"
+    }
     if thumb:
         payload["thumb"] = thumb
     requests.post(URL + "sendVideo", json=payload)
@@ -104,7 +107,8 @@ def handle_message(msg):
         if "video" in msg or "photo" in msg:
             media = msg.get("video") or msg.get("photo")[-1]
             file_id = media["file_id"]
-            video_data[user_id] = {"file_id": file_id, "type": "video" if "video" in msg else "photo"}
+            media_type = "video" if "video" in msg else "photo"
+            video_data[user_id] = {"file_id": file_id, "type": media_type}
             user_states[user_id] = "awaiting_post_caption"
             send_message(chat_id, "کپشن را وارد کنید:")
         else:
@@ -118,7 +122,12 @@ def handle_message(msg):
         if media_type == "video":
             send_video(chat_id, file_id, caption)
         else:
-            requests.post(URL + "sendPhoto", json={"chat_id": chat_id, "photo": file_id, "caption": caption, "parse_mode": "HTML"})
+            requests.post(URL + "sendPhoto", json={
+                "chat_id": chat_id,
+                "photo": file_id,
+                "caption": caption,
+                "parse_mode": "HTML"
+            })
         user_states[user_id] = "awaiting_forward"
         send_message(chat_id, "برای ارسال پست بعدی، یک پیام دیگر فوروارد کنید یا به پنل بازگردید.")
         return
@@ -146,6 +155,8 @@ def preview_and_reset(user_id, chat_id):
 def set_webhook():
     requests.get(URL + f"setWebhook?url={WEBHOOK_URL}")
 
+# Webhook باید خارج از main تنظیم شود تا در Render اجرا شود
+set_webhook()
+
 if __name__ == "__main__":
-    set_webhook()
     app.run(host="0.0.0.0", port=5000)
