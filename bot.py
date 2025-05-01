@@ -1,208 +1,186 @@
 import os
-import logging
-from datetime import timedelta
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler, CallbackContext
-)
+from flask import Flask, request
+import threading
+import time
+import json
+import requests
 
-TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = '@hottof'
-ADMINS = [7189616405, 6039863213, 5459406429, 6387942633]
+TOKEN = os.getenv("BOT_TOKEN") or "PUT_YOUR_TOKEN_HERE"
+BOT_URL = f"https://api.telegram.org/bot{TOKEN}"
+ADMIN_IDS = [7189616405, 6039863213, 5459406429, 6387942633]
+CHANNEL_TAG = "@hottof | تُفِ داغ"
+BOT_USERNAME = "HotTofBot"
+DB_PATH = "data.json"
+app = Flask(__name__)
 
-(
-    SELECT_MODE, WAITING_FOR_MEDIA, WAITING_FOR_CAPTION,
-    WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE,
-    WAITING_FOR_VIDEO, WAITING_FOR_COVER, WAITING_FOR_ALT_CAPTION
-) = range(8)
+user_states = {}
+session_data = {}
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+if not os.path.exists(DB_PATH):
+    with open(DB_PATH, "w") as f:
+        json.dump({}, f)
 
-async def post_init(application: Application):
-    _ = application.job_queue
+def load_db():
+    with open(DB_PATH) as f:
+        return json.load(f)
 
-application = Application.builder().token(TOKEN).post_init(post_init).build()
+def save_db(data):
+    with open(DB_PATH, "w") as f:
+        json.dump(data, f)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMINS:
-        await update.message.reply_text('شما دسترسی به این ربات ندارید.')
-        return ConversationHandler.END
-    keyboard = ReplyKeyboardMarkup([['ارسال ساده', 'ارسال با کاور']], resize_keyboard=True)
-    await update.message.reply_text('یکی از حالت‌های زیر را انتخاب کنید:', reply_markup=keyboard)
-    return SELECT_MODE
+def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"): 
+    data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    requests.post(f"{BOT_URL}/sendMessage", data=data)
 
-async def select_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == 'ارسال ساده':
-        context.user_data['mode'] = 'simple'
-        await update.message.reply_text('لطفاً یک عکس یا ویدیو ارسال کنید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_MEDIA
-    elif text == 'ارسال با کاور':
-        context.user_data['mode'] = 'with_cover'
-        await update.message.reply_text('لطفاً ویدیوی مورد نظر را ارسال کنید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_VIDEO
-    else:
-        await update.message.reply_text('گزینه معتبر نیست.')
-        return SELECT_MODE
+def delete_message(chat_id, message_id):
+    requests.post(f"{BOT_URL}/deleteMessage", data={"chat_id": chat_id, "message_id": message_id})
 
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        media_type = 'photo'
-    elif update.message.video:
-        file_id = update.message.video.file_id
-        media_type = 'video'
-    else:
-        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
-        return WAITING_FOR_MEDIA
+def send_video(chat_id, file_id, caption=None, thumbnail=None, reply_markup=None):
+    data = {"chat_id": chat_id, "video": file_id}
+    if caption:
+        data["caption"] = caption
+        data["parse_mode"] = "HTML"
+    if thumbnail:
+        data["thumb"] = thumbnail
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    return requests.post(f"{BOT_URL}/sendVideo", data=data).json()
 
-    context.user_data['file_id'] = file_id
-    context.user_data['media_type'] = media_type
-    await update.message.reply_text('لطفاً کپشن مورد نظر را وارد کنید:')
-    return WAITING_FOR_CAPTION
+def send_photo(chat_id, file_id, caption=None):
+    data = {"chat_id": chat_id, "photo": file_id, "caption": caption, "parse_mode": "HTML"}
+    return requests.post(f"{BOT_URL}/sendPhoto", data=data).json()
 
-async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.text
-    final_caption = caption + "\n\n🔥@hottof | تُفِ داغ"
-    context.user_data['caption'] = final_caption
+def build_panel():
+    return {"keyboard": [[{"text": "سوپر"}, {"text": "پست"}]], "resize_keyboard": True}
 
-    keyboard = ReplyKeyboardMarkup(
-        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
-        resize_keyboard=True
-    )
+def auto_delete(chat_id, message_id):
+    time.sleep(20)
+    delete_message(chat_id, message_id)
 
-    media_type = context.user_data['media_type']
-    file_id = context.user_data['file_id']
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = request.get_json()
+    if "message" in update:
+        msg = update["message"]
+        chat_id = msg["chat"]["id"]
+        user_id = msg["from"]["id"]
+        text = msg.get("text", "")
+        file_id = None
 
-    if media_type == 'photo':
-        await update.message.reply_photo(file_id, caption=final_caption, reply_markup=keyboard)
-    elif media_type == 'video':
-        await update.message.reply_video(file_id, caption=final_caption, reply_markup=keyboard)
+        if text == "/start":
+            send_message(chat_id, "خوش اومدی به ربات")
 
-    return WAITING_FOR_ACTION
+        elif text == "/panel" and user_id in ADMIN_IDS:
+            user_states[user_id] = None
+            send_message(chat_id, "پنل مدیریت", build_panel())
 
-async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == 'ارسال در کانال':
-        await send_to_channel(context)
-        await update.message.reply_text('پیام ارسال شد.', reply_markup=ReplyKeyboardMarkup([['ارسال ساده', 'ارسال با کاور']], resize_keyboard=True))
-        return SELECT_MODE
-    elif text == 'ارسال در آینده':
-        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_SCHEDULE
-    elif text == 'برگشت به ابتدا':
-        return await start(update, context)
-    else:
-        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
-        return WAITING_FOR_ACTION
+        elif text == "سوپر" and user_id in ADMIN_IDS:
+            user_states[user_id] = "awaiting_video"
+            session_data[user_id] = {}
+            send_message(chat_id, "لطفا ویدیوی مورد نظر را ارسال کنید")
 
-async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        minutes = int(update.message.text.strip())
-        job_data = context.user_data.copy()
-        context.job_queue.run_once(send_scheduled, when=timedelta(minutes=minutes), data=job_data)
-        await update.message.reply_text(f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.', reply_markup=ReplyKeyboardMarkup([['ارسال ساده', 'ارسال با کاور']], resize_keyboard=True))
-        return SELECT_MODE
-    except:
-        await update.message.reply_text('خطا در زمان‌بندی. فقط عدد وارد کنید.')
-        return WAITING_FOR_SCHEDULE
+        elif text == "پست" and user_id in ADMIN_IDS:
+            user_states[user_id] = "awaiting_forward"
+            session_data[user_id] = {}
+            send_message(chat_id, "لطفاً یک پیام فوروارد شده بفرستید")
 
-async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
-    data = context.user_data
-    mode = data.get('mode')
+        elif user_states.get(user_id) == "awaiting_video" and "video" in msg:
+            file_id = msg["video"]["file_id"]
+            session_data[user_id]["video"] = file_id
+            user_states[user_id] = "awaiting_caption"
+            send_message(chat_id, "لطفاً کپشن را وارد کنید")
 
-    if mode == 'simple':
-        media_type = data['media_type']
-        file_id = data['file_id']
-        caption = data['caption']
-        if media_type == 'photo':
-            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-        elif media_type == 'video':
-            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+        elif user_states.get(user_id) == "awaiting_caption":
+            session_data[user_id]["caption"] = text
+            user_states[user_id] = "awaiting_cover"
+            keyboard = {"inline_keyboard": [[{"text": "ندارم", "callback_data": "no_cover"}]]}
+            send_message(chat_id, "اگر کاور دارید ارسال کنید، اگر نه روی دکمه زیر بزنید", keyboard)
 
-    elif mode == 'with_cover':
-        video_id = data['video_file_id']
-        cover_id = data['cover_file_id']
-        caption_text = data['caption']
-        preview_caption = f"{caption_text}\n\n[مشاهده](https://t.me/{context.bot.username}?start={video_id})\n\n🔥@hottof | تُفِ داغ"
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=cover_id, caption=preview_caption, parse_mode='Markdown')
+        elif user_states.get(user_id) == "awaiting_cover" and "photo" in msg:
+            file_id = msg["photo"][-1]["file_id"]
+            session_data[user_id]["cover"] = file_id
+            finalize_super(chat_id, user_id)
 
-async def send_scheduled(context: CallbackContext):
-    context.user_data = context.job.data
-    await send_to_channel(context)
+        elif user_states.get(user_id) == "awaiting_caption_fwd":
+            session_data[user_id]["caption"] = text
+            file = session_data[user_id]["file"]
+            typ = session_data[user_id]["type"]
+            if typ == "video":
+                send_video(chat_id, file, caption=f"{text}\n\n🔥{CHANNEL_TAG}")
+            else:
+                send_photo(chat_id, file, caption=f"{text}\n\n🔥{CHANNEL_TAG}")
+            user_states[user_id] = "awaiting_forward"
+            send_message(chat_id, "منتظر پیام بعدی هستم یا بازگشت به پنل", build_panel())
 
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.video:
-        await update.message.reply_text('لطفاً فقط یک ویدیو ارسال کنید.')
-        return WAITING_FOR_VIDEO
+        elif user_states.get(user_id) == "awaiting_forward" and ("video" in msg or "photo" in msg):
+            if "video" in msg:
+                file = msg["video"]["file_id"]
+                typ = "video"
+            else:
+                file = msg["photo"][-1]["file_id"]
+                typ = "photo"
+            session_data[user_id]["file"] = file
+            session_data[user_id]["type"] = typ
+            user_states[user_id] = "awaiting_caption_fwd"
+            send_message(chat_id, "لطفاً کپشن را وارد کنید")
 
-    context.user_data['video_file_id'] = update.message.video.file_id
-    await update.message.reply_text('حالاً کاور (عکس) را ارسال کنید.')
-    return WAITING_FOR_COVER
+    elif "callback_query" in update:
+        q = update["callback_query"]
+        user_id = q["from"]["id"]
+        chat_id = q["message"]["chat"]["id"]
+        data = q["data"]
+        msg_id = q["message"]["message_id"]
+        if data == "no_cover":
+            delete_message(chat_id, msg_id)
+            finalize_super(chat_id, user_id)
 
-async def handle_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text('لطفاً فقط عکس ارسال کنید.')
-        return WAITING_FOR_COVER
+    return "ok"
 
-    context.user_data['cover_file_id'] = update.message.photo[-1].file_id
-    await update.message.reply_text('لطفاً کپشن را بنویسید:')
-    return WAITING_FOR_ALT_CAPTION
+def finalize_super(chat_id, user_id):
+    video = session_data[user_id].get("video")
+    caption = session_data[user_id].get("caption")
+    cover = session_data[user_id].get("cover")
+    code = str(int(time.time() * 1000))[-6:]
+    db = load_db()
+    db[code] = video
+    save_db(db)
+    link = f"https://t.me/{BOT_USERNAME}?start={code}"
+    msg = f"{caption}\n\n<a href=\"{link}\">مشاهده</a>\n\n🔥{CHANNEL_TAG}"
+    send_video(chat_id, video, caption=msg, thumbnail=cover)
+    user_states[user_id] = None
+    send_message(chat_id, "به پنل برگشتید", build_panel())
 
-async def handle_alt_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption_text = update.message.text
-    context.user_data['caption'] = caption_text
-    return await handle_action(update, context)
+@app.route("/", methods=["GET"])
+def root():
+    return "Bot is running."
 
-async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if args:
-        file_id = args[0]
-        message = await update.message.reply_text('در حال ارسال فایل، این پیام پس از ۲۰ ثانیه حذف می‌شود...')
-        sent = await update.message.reply_video(video=file_id)
-        context.job_queue.run_once(delete_later, 20, data={'chat_id': sent.chat_id, 'message_id': sent.message_id})
-        context.job_queue.run_once(delete_later, 20, data={'chat_id': message.chat_id, 'message_id': message.message_id})
-    else:
-        await start(update, context)
+def delete_after_delay(chat_id, message_id):
+    time.sleep(20)
+    delete_message(chat_id, message_id)
 
-async def delete_later(context: CallbackContext):
-    data = context.job.data
-    try:
-        await context.bot.delete_message(chat_id=data['chat_id'], message_id=data['message_id'])
-    except:
-        pass
+@app.route(f"/{TOKEN}_hook", methods=["POST"])
+def start_handler():
+    update = request.get_json()
+    if "message" in update:
+        msg = update["message"]
+        chat_id = msg["chat"]["id"]
+        user_id = msg["from"]["id"]
+        text = msg.get("text", "")
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+        if text.startswith("/start") and len(text.split()) == 2:
+            code = text.split()[1]
+            db = load_db()
+            video = db.get(code)
+            if video:
+                res = send_video(chat_id, video)
+                if res.get("ok"):
+                    mid = res["result"]["message_id"]
+                    send_message(chat_id, "این محتوا تا ۲۰ ثانیه دیگر حذف می‌شود")
+                    threading.Thread(target=delete_after_delay, args=(chat_id, mid)).start()
 
-def main():
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', handle_start_command)],
-        states={
-            SELECT_MODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_mode)],
-            WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
-            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
-            WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
-            WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
-            WAITING_FOR_VIDEO: [MessageHandler(filters.VIDEO, handle_video)],
-            WAITING_FOR_COVER: [MessageHandler(filters.PHOTO, handle_cover)],
-            WAITING_FOR_ALT_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alt_caption)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
+    return "ok"
 
-    application.add_handler(conv_handler)
-
-    WEBHOOK_URL = 'https://sim-dtlp.onrender.com'
-
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
-        webhook_url=WEBHOOK_URL
-    )
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
