@@ -1,16 +1,24 @@
-# File: membership_bot.py
-
 import os
+import sqlite3
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN_MEMBERSHIP")
 ADMINS = [6387942633]
-CHANNEL_RULES = {  # {bot: [ (channel, expire_date or count_limit) ]}
-    'uploader': [],
-    'sender': []
-}
+
+# اتصال به دیتابیس SQLite
+conn = sqlite3.connect('membership.db')
+cursor = conn.cursor()
+
+# ایجاد جدول‌ها در دیتابیس
+cursor.execute('''CREATE TABLE IF NOT EXISTS channels (
+                    bot TEXT,
+                    channel TEXT,
+                    limit_type TEXT,
+                    limit_value TEXT,
+                    PRIMARY KEY (bot, channel))''')
+conn.commit()
 
 application = Application.builder().token(TOKEN).build()
 
@@ -60,11 +68,20 @@ async def finalize_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     limit_type = context.user_data.get('limit_type')
     value = update.message.text.strip()
 
+    # ذخیره داده‌ها در دیتابیس
     if limit_type == 'count':
-        CHANNEL_RULES[bot].append((channel, int(value)))
+        cursor.execute('''
+        INSERT OR REPLACE INTO channels (bot, channel, limit_type, limit_value)
+        VALUES (?, ?, ?, ?)
+        ''', (bot, channel, limit_type, value))
     elif limit_type == 'time':
         expire_date = datetime.now() + timedelta(days=int(value))
-        CHANNEL_RULES[bot].append((channel, expire_date))
+        cursor.execute('''
+        INSERT OR REPLACE INTO channels (bot, channel, limit_type, limit_value)
+        VALUES (?, ?, ?, ?)
+        ''', (bot, channel, limit_type, expire_date))
+    
+    conn.commit()
 
     await update.message.reply_text("ذخیره شد")
 
