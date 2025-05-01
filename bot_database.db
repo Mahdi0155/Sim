@@ -1,0 +1,51 @@
+import sqlite3
+
+# اتصال به دیتابیس
+conn = sqlite3.connect('bot_database.db')
+cursor = conn.cursor()
+
+# ایجاد جدول کاربران
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT,
+    membership_status TEXT,
+    joined_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)''')
+
+# ایجاد جدول فایل‌ها
+cursor.execute('''CREATE TABLE IF NOT EXISTS files (
+    file_id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    file_type TEXT,
+    file_id TEXT,
+    caption TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+)''')
+
+# ایجاد جدول کانال‌ها
+cursor.execute('''CREATE TABLE IF NOT EXISTS channels (
+    channel_id INTEGER PRIMARY KEY,
+    bot_name TEXT,
+    channel_link TEXT,
+    membership_limit_type TEXT,   -- time or count
+    membership_limit_value INTEGER, -- برای محدودیت تعداد اعضا یا زمان
+    expiry_date TIMESTAMP,
+    FOREIGN KEY (bot_name) REFERENCES users(username)
+)''')
+
+# ایجاد جدول آمار
+cursor.execute('''CREATE TABLE IF NOT EXISTS statistics (
+    bot_name TEXT,
+    total_members INTEGER DEFAULT 0,
+    daily_members INTEGER DEFAULT 0,
+    weekly_members INTEGER DEFAULT 0,
+    monthly_members INTEGER DEFAULT 0,
+    FOREIGN KEY (bot_name) REFERENCES users(username)
+)''')
+
+# ذخیره تغییرات
+conn.commit()
+
+# بستن اتصال
+conn.close()
