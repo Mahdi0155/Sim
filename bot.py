@@ -21,6 +21,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if args:
+        file_id = args[0]
+        loading = await update.message.reply_text("در حال ارسال فایل...")
+        sent = await update.message.reply_video(video=file_id)
+        context.job_queue.run_once(delete_later, 20, data={'chat_id': sent.chat_id, 'message_id': sent.message_id})
+        context.job_queue.run_once(delete_later, 20, data={'chat_id': loading.chat_id, 'message_id': loading.message_id})
+        return ConversationHandler.END
+
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text("شما دسترسی ندارید.")
         return ConversationHandler.END
@@ -98,13 +107,15 @@ async def handle_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_alt_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.text.strip()
-    caption += "\n\n🔥@hottof | تُفِ داغ"
     context.user_data['caption'] = caption
 
     keyboard = [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']]
-    cover_id = context.user_data['cover_file_id']
-
-    await update.message.reply_photo(cover_id, caption=caption, reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+    await update.message.reply_photo(
+        photo=context.user_data['cover_file_id'],
+        caption=f"{caption}\n\n[مشاهده](https://t.me/{context.bot.username}?start={context.user_data['video_file_id']})\n\n🔥@hottof | تُفِ داغ",
+        parse_mode='Markdown',
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
     return WAITING_FOR_ACTION
 
 async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,12 +137,8 @@ async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         minutes = int(update.message.text.strip())
         data = context.user_data.copy()
         context.job_queue.run_once(send_scheduled, timedelta(minutes=minutes), data=data)
-
-        await update.message.reply_text(
-            f"پیام برای {minutes} دقیقه بعد زمان‌بندی شد.",
-            reply_markup=ReplyKeyboardMarkup([['ارسال ساده', 'ارسال با کاور']], resize_keyboard=True)
-        )
-        return SELECT_MODE
+        await update.message.reply_text(f"پیام برای {minutes} دقیقه بعد زمان‌بندی شد.")
+        return await start(update, context)
     except:
         await update.message.reply_text("لطفاً فقط عدد وارد کنید.")
         return WAITING_FOR_SCHEDULE
@@ -144,30 +151,22 @@ async def send_to_channel(context: CallbackContext):
         else:
             await context.bot.send_video(CHANNEL_USERNAME, data['file_id'], caption=data['caption'])
     elif data.get('mode') == 'with_cover':
-        cover_id = data['cover_file_id']
-        video_id = data['video_file_id']
-        full_caption = f"{data['caption']}\n\n[مشاهده](https://t.me/{context.bot.username}?start={video_id})\n\n🔥@hottof | تُفِ داغ"
-        await context.bot.send_photo(CHANNEL_USERNAME, photo=cover_id, caption=full_caption, parse_mode='Markdown')
+        caption = f"{data['caption']}\n\n[مشاهده](https://t.me/{context.bot.username}?start={data['video_file_id']})\n\n🔥@hottof | تُفِ داغ"
+        await context.bot.send_photo(
+            chat_id=CHANNEL_USERNAME,
+            photo=data['cover_file_id'],
+            caption=caption,
+            parse_mode='Markdown'
+        )
 
 async def send_scheduled(context: CallbackContext):
     context.user_data = context.job.data
     await send_to_channel(context)
 
-async def handle_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if args:
-        video_id = args[0]
-        loading = await update.message.reply_text("در حال ارسال فایل...")
-        sent = await update.message.reply_video(video=video_id)
-        context.job_queue.run_once(delete_later, 20, data={'chat_id': sent.chat_id, 'message_id': sent.message_id})
-        context.job_queue.run_once(delete_later, 20, data={'chat_id': loading.chat_id, 'message_id': loading.message_id})
-    else:
-        return await start(update, context)
-
 async def delete_later(context: CallbackContext):
     try:
         data = context.job.data
-        await context.bot.delete_message(data['chat_id'], data['message_id'])
+        await context.bot.delete_message(chat_id=data['chat_id'], message_id=data['message_id'])
     except:
         pass
 
@@ -179,7 +178,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", handle_start_command)],
+        entry_points=[CommandHandler("start", start)],
         states={
             SELECT_MODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_mode)],
             WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
