@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: sim-dtlp
+    env: python
+    buildCommand: ""
+    startCommand: "python main.py"
+    envVars:
+      - key: BOT_TOKEN
+        value: 7413532622:AAE5ahcPiWADwBcC_RMyrUfjLC3yepvumpU
