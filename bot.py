@@ -6,7 +6,7 @@ from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, Re
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 
 TOKEN = os.environ.get("BOT_TOKEN") or "توکن_ربات_تو"
-ADMIN_IDS = [123456789]  # آیدی عددی ادمین‌ها
+ADMIN_IDS = [7189616405, 6039863213, 5459406429, 6387942633]  # آیدی عددی ادمین‌ها
 CHANNEL_TAG = "@hottof | تُفِ داغ"
 
 bot = Bot(token=TOKEN)
