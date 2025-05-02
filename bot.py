@@ -118,10 +118,17 @@ async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif msg.video:
         await update.message.reply_video(msg.video.file_id, caption=caption)
     await update.message.reply_text("برای فوروارد بعدی پیام فورواردی بفرست:")
-    
+
+    # اضافه کردن دکمه بازگشت به پنل
     keyboard = ReplyKeyboardMarkup([['بازگشت به پنل']], resize_keyboard=True)
-    await update.message.reply_text("بازگشت به پنل.", reply_markup=keyboard)
+    await update.message.reply_text("برای بازگشت به پنل اصلی، دکمه زیر را فشار دهید.", reply_markup=keyboard)
     return POST_FORWARD
+
+# این بخش برای برگشت به پنل هنگام فشردن دکمه «بازگشت به پنل»
+async def back_to_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = ReplyKeyboardMarkup([['سوپر', 'پست']], resize_keyboard=True)
+    await update.message.reply_text("به پنل اصلی بازگشتید.", reply_markup=keyboard)
+    return ConversationHandler.END
 
 # --------------------- MAIN ---------------------
 
@@ -133,9 +140,9 @@ def main():
             SUPER_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, super_caption)],
             SUPER_COVER: [MessageHandler(filters.PHOTO, super_cover)],
             POST_FORWARD: [MessageHandler(filters.ALL, post_forward)],
-            POST_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, post_caption)]
+            POST_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, post_caption)],
         },
-        fallbacks=[]
+        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, back_to_panel)]
     )
     application.add_handler(conv)
     application.add_handler(CommandHandler("start", start_handler))
