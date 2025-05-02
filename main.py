@@ -1,3 +1,4 @@
+# main.py
 import os
 import json
 import logging
@@ -38,11 +39,9 @@ def save_data(data):
         json.dump(data, f)
 
 data = load_data()
-
 application = Application.builder().token(TOKEN).build()
 
 # --- handlers ---
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی ندارید.')
@@ -164,7 +163,14 @@ application.add_handler(ConversationHandler(
 ))
 application.add_handler(CommandHandler("uploadlink", uploadlink))
 
-# --- Flask endpoint برای لینک دریافت فایل ---
+# --- اضافه کردن /webhook برای دریافت پیام از تلگرام ---
+@flask_app.route("/webhook", methods=["POST"])
+def telegram_webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put(update)
+    return "ok"
+
+# --- Flask endpoint برای دریافت فایل ---
 @flask_app.route("/get/<name>", methods=["GET"])
 def serve_file(name):
     user_id = request.args.get("user_id", type=int)
@@ -182,7 +188,7 @@ def serve_file(name):
         return "ارسال شد"
     return "user_id لازم است", 400
 
-# --- اجرای ربات و Flask همزمان ---
+# --- اجرای همزمان Flask و Bot ---
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host="0.0.0.0", port=port)
@@ -191,7 +197,6 @@ async def run_bot():
     await application.initialize()
     await application.start()
     await application.bot.set_webhook(WEBHOOK_URL)
-    await application.updater.start_polling()  # اختیاری: فقط برای تست local
 
 def main():
     threading.Thread(target=run_flask).start()
