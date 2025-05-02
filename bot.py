@@ -2,7 +2,7 @@ import os
 import json
 import requests
 from flask import Flask, request
-from config import TOKEN, ADMINS, CHANNEL_TAG, DATA_FILE
+from config import TOKEN, ADMINS, CHANNEL_TAG, DATA_FILE, WEBHOOK_URL
 
 API_URL = f"https://api.telegram.org/bot{TOKEN}"
 
@@ -45,6 +45,12 @@ def delete_message(chat_id, message_id):
 
 user_states = {}
 user_data = {}
+
+# تنظیم وب‌هوک در زمان اجرای برنامه
+@app.before_first_request
+def set_webhook():
+    requests.get(f"{API_URL}/deleteWebhook")
+    requests.get(f"{API_URL}/setWebhook?url={WEBHOOK_URL}")
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -107,7 +113,7 @@ def handle_message(msg):
             'parse_mode': 'HTML'
         })
         send_message(chat_id, "پست ارسال شد. برای ارسال پست جدید، یک پیام فورواردی دیگر ارسال کنید یا برگشت به پنل را بزنید.")
-    
+
 
 def handle_callback(query):
     user_id = query['from']['id']
@@ -117,6 +123,7 @@ def handle_callback(query):
         user_data[user_id]['cover'] = None
         finalize_super(chat_id, user_id)
     delete_message(chat_id, message_id)
+
 
 def finalize_super(chat_id, user_id):
     data = user_data[user_id]
@@ -135,3 +142,6 @@ def finalize_super(chat_id, user_id):
     send_video(chat_id, file_id, caption_final, thumbnail=cover)
     send_message(chat_id, "پیش‌نمایش آماده شد. اکنون به پنل بازمی‌گردید.")
     user_states[user_id] = None
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
