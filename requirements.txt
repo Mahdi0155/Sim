@@ -1,2 +1,2 @@
+python-telegram-bot[webhook]==20.7
 Flask
-python-telegram-bot==13.15
