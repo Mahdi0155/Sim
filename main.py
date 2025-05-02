@@ -27,6 +27,8 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
-    asyncio.run(on_startup())
+    @app.on_event("startup")
+async def startup_event():
+    await on_startup()
     uvicorn.run(app, host="0.0.0.0", port=8000)
     asyncio.run(on_shutdown())
