@@ -1,147 +1,115 @@
-import os
+import logging
+import time
 import json
-import requests
-from flask import Flask, request
-from config import TOKEN, ADMINS, CHANNEL_TAG, DATA_FILE, WEBHOOK_URL
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-API_URL = f"https://api.telegram.org/bot{TOKEN}"
+# تنظیمات اولیه
+TOKEN = 'YOUR_BOT_TOKEN'  # توکن ربات خود را اینجا وارد کنید
+ADMIN_IDS = [7189616405, 6387942633, 5459406429]  # آیدی ادمین‌ها
+CHANNEL_TAG = "🔥@hottof | تُفِ داغ"
+DB_FILE = "data.json"  # فایل ذخیره داده‌ها
 
-app = Flask(__name__)
+# تنظیمات لاگینگ برای دیباگ
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# بارگذاری دیتابیس ساده
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w') as f:
-        json.dump({}, f)
-
+# بارگذاری دیتابیس
 def load_data():
-    with open(DATA_FILE, 'r') as f:
-        return json.load(f)
+    try:
+        with open(DB_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
+# ذخیره دیتابیس
 def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f)
+    with open(DB_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
 
-def send_message(chat_id, text, reply_markup=None):
-    data = {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}
-    if reply_markup:
-        data['reply_markup'] = json.dumps(reply_markup)
-    requests.post(f"{API_URL}/sendMessage", data=data)
+# ارسال پیام به ادمین
+def send_message(chat_id, text):
+    bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
-def send_video(chat_id, file_id, caption, thumbnail=None, reply_markup=None):
-    data = {
-        'chat_id': chat_id,
-        'video': file_id,
-        'caption': caption,
-        'parse_mode': 'HTML'
-    }
-    if thumbnail:
-        data['thumb'] = thumbnail
-    if reply_markup:
-        data['reply_markup'] = json.dumps(reply_markup)
-    requests.post(f"{API_URL}/sendVideo", data=data)
+# دستور شروع
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('سلام! خوش آمدید.\nاز /panel برای دسترسی به پنل استفاده کنید.')
 
-def delete_message(chat_id, message_id):
-    requests.post(f"{API_URL}/deleteMessage", data={'chat_id': chat_id, 'message_id': message_id})
+# دسترسی به پنل
+def panel(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    if user_id not in ADMIN_IDS:
+        update.message.reply_text('شما دسترسی به این پنل ندارید.')
+        return
+    update.message.reply_text("پنل مدیریتی:\n1. /super - ارسال محتوا (سوپر)\n2. /post - ارسال پست")
 
-user_states = {}
-user_data = {}
+# حالت پست
+def handle_post(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    if user_id not in ADMIN_IDS:
+        update.message.reply_text('شما دسترسی به این پنل ندارید.')
+        return
+    
+    # دریافت پیام فوروارد شده
+    forwarded_message = update.message.forward_from
+    caption = ' '.join(context.args)  # دریافت کپشن از کاربر
+    
+    # ارسال نتیجه به ادمین
+    send_message(user_id, f"پست آماده شد:\n{caption}\n🔥@hottof | تُفِ داغ")
+    send_message(user_id, f"پست فوروارد شده: {forwarded_message.text}\nکپشن: {caption}\n🔥@hottof | تُفِ داغ")
 
-# تنظیم وب‌هوک در زمان اجرای برنامه
-@app.before_first_request
-def set_webhook():
-    requests.get(f"{API_URL}/deleteWebhook")
-    requests.get(f"{API_URL}/setWebhook?url={WEBHOOK_URL}")
-
-@app.route('/', methods=['POST'])
-def webhook():
-    update = request.get_json()
-    if 'message' in update:
-        handle_message(update['message'])
-    elif 'callback_query' in update:
-        handle_callback(update['callback_query'])
-    return 'ok'
-
-def handle_message(msg):
-    chat_id = msg['chat']['id']
-    user_id = msg['from']['id']
-    text = msg.get('text', '')
-
-    if text == '/start':
-        send_message(chat_id, "خوش آمدید!")
+# حالت سوپر
+def handle_super(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    if user_id not in ADMIN_IDS:
+        update.message.reply_text('شما دسترسی به این پنل ندارید.')
         return
 
-    if text == '/پنل' and user_id in ADMINS:
-        keyboard = {'keyboard': [["سوپر", "پست"]], 'resize_keyboard': True}
-        send_message(chat_id, "پنل مدیریت فعال شد.", keyboard)
-        return
-
-    state = user_states.get(user_id)
-    if text == 'سوپر':
-        user_states[user_id] = 'awaiting_video'
-        send_message(chat_id, "لطفا ویدیو را ارسال کنید.")
-    elif text == 'پست':
-        user_states[user_id] = 'awaiting_forward'
-        send_message(chat_id, "لطفا یک پیام فوروارد شده ارسال کنید.")
-    elif state == 'awaiting_video' and 'video' in msg:
-        user_data[user_id] = {'video': msg['video']['file_id']}
-        user_states[user_id] = 'awaiting_caption'
-        send_message(chat_id, "لطفا کپشن را وارد کنید.")
-    elif state == 'awaiting_caption':
-        user_data[user_id]['caption'] = text
-        user_states[user_id] = 'awaiting_cover'
-        keyboard = {
-            'inline_keyboard': [[{'text': 'بدون کاور', 'callback_data': 'no_cover'}]]
-        }
-        send_message(chat_id, "اگر کاور دارید ارسال کنید یا دکمه بدون کاور را بزنید.", keyboard)
-    elif state == 'awaiting_cover' and 'photo' in msg:
-        user_data[user_id]['cover'] = msg['photo'][-1]['file_id']
-        finalize_super(chat_id, user_id)
-    elif state == 'awaiting_forward' and 'forward_from' in msg or 'forward_from_chat' in msg:
-        user_data[user_id] = {'forward_msg': msg}
-        user_states[user_id] = 'awaiting_post_caption'
-        send_message(chat_id, "لطفا کپشن پست را وارد کنید.")
-    elif state == 'awaiting_post_caption':
-        fmsg = user_data[user_id]['forward_msg']
-        caption = f"{text}\n\n🔥{CHANNEL_TAG}"
-        forward_id = fmsg['message_id']
-        from_chat_id = fmsg['chat']['id']
-        requests.post(f"{API_URL}/copyMessage", data={
-            'chat_id': chat_id,
-            'from_chat_id': from_chat_id,
-            'message_id': forward_id,
-            'caption': caption,
-            'parse_mode': 'HTML'
-        })
-        send_message(chat_id, "پست ارسال شد. برای ارسال پست جدید، یک پیام فورواردی دیگر ارسال کنید یا برگشت به پنل را بزنید.")
-
-
-def handle_callback(query):
-    user_id = query['from']['id']
-    chat_id = query['message']['chat']['id']
-    message_id = query['message']['message_id']
-    if query['data'] == 'no_cover':
-        user_data[user_id]['cover'] = None
-        finalize_super(chat_id, user_id)
-    delete_message(chat_id, message_id)
-
-
-def finalize_super(chat_id, user_id):
-    data = user_data[user_id]
-    file_id = data['video']
-    caption = data['caption']
-    cover = data.get('cover')
+    file_id = update.message.video.file_id if update.message.video else update.message.document.file_id
     unique_id = f"v_{str(user_id)}_{str(hash(file_id))}"
-
+    
+    # ذخیره نام فایل در دیتابیس
     db = load_data()
     db[unique_id] = file_id
     save_data(db)
+    
+    # دریافت کپشن از کاربر
+    caption = ' '.join(context.args)  # کپشن از کاربر
+    
+    # ساخت لینک مشاهده
+    link = f"https://t.me/hottofbot?start={unique_id}"
+    
+    # ارسال لینک به ادمین
+    caption_final = f"{caption}\n\n<a href='{link}'>مشاهده</a>\n🔥@hottof | تُفِ داغ"
+    send_message(user_id, f"نتیجه نهایی آماده شد. شما می‌توانید لینک را در کانال خود قرار دهید.")
+    send_message(user_id, caption_final)
+    
+    # نمایش نتیجه نهایی
+    send_message(user_id, "لینک مشاهده آماده شد. این محتوا بعد از ۲۰ ثانیه از چت حذف خواهد شد.")
+    
+    # حذف پیام از چت کاربر بعد از ۲۰ ثانیه
+    time.sleep(20)
+    update.message.delete()
 
-    link = f"https://t.me/{os.environ.get('BOT_USERNAME')}?start={unique_id}"
-    caption_final = f"{caption}\n\n<a href='{link}'>مشاهده</a>\n🔥{CHANNEL_TAG}"
+# راه اندازی ربات
+def main():
+    updater = Updater(TOKEN)
 
-    send_video(chat_id, file_id, caption_final, thumbnail=cover)
-    send_message(chat_id, "پیش‌نمایش آماده شد. اکنون به پنل بازمی‌گردید.")
-    user_states[user_id] = None
+    # دستورات
+    dispatcher = updater.dispatcher
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("panel", panel))
+    dispatcher.add_handler(CommandHandler("super", handle_super))
+    dispatcher.add_handler(CommandHandler("post", handle_post))
+
+    # پیام‌های ورودی
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_post))
+    dispatcher.add_handler(MessageHandler(Filters.video | Filters.document, handle_super))
+
+    # شروع ربات
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    main()
