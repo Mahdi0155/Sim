@@ -1,169 +1,145 @@
 import os
 import logging
-import traceback
+from uuid import uuid4
 from datetime import timedelta
+from telegram import (Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup,
+                      ReplyKeyboardRemove)
+from telegram.ext import (Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler,
+                          ContextTypes, ConversationHandler)
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler, CallbackContext
-)
-
-# اطلاعات ربات
 TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = '@hottof'
-ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
+BASE_URL = "https://sim-dtlp.onrender.com"
+ADMINS = [7189616405, 6387942633, 5459406429]
+CHANNEL_TAG = "🔥@hottof | تُفِ داغ"
 
-# مراحل گفتگو
-WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
+SUPER_VIDEO, SUPER_CAPTION, SUPER_COVER = range(3)
+POST_FORWARD, POST_CAPTION = range(2)
 
-# لاگ
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+application = Application.builder().token(TOKEN).build()
 
-# post_init برای فعال‌سازی job_queue
-async def post_init(application: Application):
-    _ = application.job_queue
+VIDEO_DB = {}
 
-# تعریف ربات
-application = Application.builder().token(TOKEN).post_init(post_init).build()
-
-# دستورات ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("به ربات خوش آمدید.")
+
+async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
-        await update.message.reply_text('شما دسترسی به این ربات ندارید.')
-        return ConversationHandler.END
-    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.')
-    return WAITING_FOR_MEDIA
+        return
+    keyboard = ReplyKeyboardMarkup([
+        ['سوپر', 'پست']
+    ], resize_keyboard=True)
+    await update.message.reply_text("پنل مدیریت:", reply_markup=keyboard)
 
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMINS:
-        return ConversationHandler.END
-
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        media_type = 'photo'
-    elif update.message.video:
-        file_id = update.message.video.file_id
-        media_type = 'video'
-    else:
-        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
-        return WAITING_FOR_MEDIA
-
-    context.user_data['file_id'] = file_id
-    context.user_data['media_type'] = media_type
-
-    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
-    return WAITING_FOR_CAPTION
-
-async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.text
-    final_caption = caption + "\n\n🔥@hottof | تُفِ داغ"
-    context.user_data['caption'] = final_caption
-
-    keyboard = ReplyKeyboardMarkup(
-        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
-        resize_keyboard=True
-    )
-
-    media_type = context.user_data['media_type']
-    file_id = context.user_data['file_id']
-
-    if media_type == 'photo':
-        await update.message.reply_photo(file_id, caption=final_caption, reply_markup=keyboard)
-    elif media_type == 'video':
-        await update.message.reply_video(file_id, caption=final_caption, reply_markup=keyboard)
-
-    return WAITING_FOR_ACTION
-
-async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    if text == 'سوپر':
+        await update.message.reply_text("یک ویدیو ارسال کن:", reply_markup=ReplyKeyboardRemove())
+        return SUPER_VIDEO
+    elif text == 'پست':
+        await update.message.reply_text("لطفاً یک پیام فورواردی ارسال کنید:", reply_markup=ReplyKeyboardRemove())
+        return POST_FORWARD
 
-    if text == 'ارسال در کانال':
-        await send_to_channel(context)
-        await update.message.reply_text('پیام ارسال شد. لطفاً مدیا بعدی را بفرستید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_MEDIA
-    elif text == 'ارسال در آینده':
-        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_SCHEDULE
-    elif text == 'برگشت به ابتدا':
-        await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_MEDIA
-    else:
-        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
-        return WAITING_FOR_ACTION
+# --------------------- SUPER ---------------------
 
-async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        minutes = int(update.message.text.strip())
-        job_data = context.user_data.copy()
+async def super_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.video:
+        await update.message.reply_text("فقط ویدیو قابل قبول است.")
+        return SUPER_VIDEO
+    context.user_data['video_id'] = update.message.video.file_id
+    context.user_data['video_unique'] = str(uuid4())[:8]
+    await update.message.reply_text("کپشن مورد نظر را وارد کن:")
+    return SUPER_CAPTION
 
-        context.job_queue.run_once(
-            send_scheduled,
-            when=timedelta(minutes=minutes),
-            data=job_data
-        )
+async def super_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['caption'] = update.message.text
+    await update.message.reply_text("حالا کاور (عکس) را بفرست:")
+    return SUPER_COVER
 
-        await update.message.reply_text(
-            f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.\n\nلطفاً پیام بعدی را ارسال کنید.',
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return WAITING_FOR_MEDIA
-    except Exception as e:
-        logger.error("خطا در handle_schedule:\n%s", traceback.format_exc())
-        await update.message.reply_text('خطا در زمان‌بندی. فقط عدد وارد کنید یا دوباره تلاش کنید.')
-        return WAITING_FOR_SCHEDULE
+async def super_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        await update.message.reply_text("فقط عکس قابل قبول است.")
+        return SUPER_COVER
 
-async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
-    data = context.user_data
-    media_type = data['media_type']
-    file_id = data['file_id']
-    caption = data['caption']
+    video_id = context.user_data['video_id']
+    caption = context.user_data['caption']
+    code = context.user_data['video_unique']
+    cover_id = update.message.photo[-1].file_id
 
-    if media_type == 'photo':
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-    elif media_type == 'video':
-        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
+    VIDEO_DB[code] = video_id
+    btn = InlineKeyboardMarkup.from_button(InlineKeyboardButton("مشاهده", url=f"https://t.me/hottofbot?start={code}"))
 
-async def send_scheduled(context: CallbackContext):
-    try:
-        data = context.job.data
-        media_type = data['media_type']
-        file_id = data['file_id']
-        caption = data['caption']
-
-        if media_type == 'photo':
-            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-        elif media_type == 'video':
-            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
-    except Exception as e:
-        logger.error("خطا در send_scheduled:\n%s", traceback.format_exc())
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_photo(
+        photo=cover_id,
+        caption=f"{caption}\n\n{CHANNEL_TAG}",
+        reply_markup=btn
+    )
+    await update.message.reply_text("بازگشت به پنل.", reply_markup=ReplyKeyboardMarkup([['سوپر', 'پست']], resize_keyboard=True))
     return ConversationHandler.END
 
-# اجرای اصلی
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        code = context.args[0]
+        if code in VIDEO_DB:
+            msg = await update.message.reply_video(VIDEO_DB[code])
+            context.job_queue.run_once(delete_sent_message, 20, data={
+                'chat_id': msg.chat_id,
+                'message_id': msg.message_id
+            })
+            await update.message.reply_text("این محتوا تا ۲۰ ثانیه دیگر حذف می‌شود.")
+        else:
+            await update.message.reply_text("محتوا یافت نشد.")
+    else:
+        await start(update, context)
+
+async def delete_sent_message(context: ContextTypes.DEFAULT_TYPE):
+    job_data = context.job.data
+    try:
+        await context.bot.delete_message(chat_id=job_data['chat_id'], message_id=job_data['message_id'])
+    except:
+        pass
+
+# --------------------- POST ---------------------
+
+async def post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.forward_from_chat and not update.message.video and not update.message.photo:
+        await update.message.reply_text("فقط پیام فورواردی یا عکس/ویدیو معتبر است.")
+        return POST_FORWARD
+    context.user_data['forward'] = update.message
+    await update.message.reply_text("کپشن مورد نظر را وارد کن:")
+    return POST_CAPTION
+
+async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = context.user_data['forward']
+    caption = update.message.text + f"\n\n{CHANNEL_TAG}"
+    if msg.photo:
+        await update.message.reply_photo(msg.photo[-1].file_id, caption=caption)
+    elif msg.video:
+        await update.message.reply_video(msg.video.file_id, caption=caption)
+    await update.message.reply_text("برای فوروارد بعدی پیام فورواردی بفرست:")
+    return POST_FORWARD
+
+# --------------------- MAIN ---------------------
+
 def main():
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("panel", panel), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)],
         states={
-            WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
-            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
-            WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
-            WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
+            SUPER_VIDEO: [MessageHandler(filters.VIDEO, super_video)],
+            SUPER_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, super_caption)],
+            SUPER_COVER: [MessageHandler(filters.PHOTO, super_cover)],
+            POST_FORWARD: [MessageHandler(filters.ALL, post_forward)],
+            POST_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, post_caption)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
+        fallbacks=[]
     )
-
-    application.add_handler(conv_handler)
-
-    WEBHOOK_URL = 'https://sim-dtlp.onrender.com'
-
+    application.add_handler(conv)
+    application.add_handler(CommandHandler("start", start_handler))
     application.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8080)),
-        webhook_url=WEBHOOK_URL
+        webhook_url=BASE_URL
     )
 
 if __name__ == '__main__':
