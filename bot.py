@@ -1,170 +1,153 @@
-import os
-import logging
-import traceback
-from datetime import timedelta
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import CommandStart, Command
+from config import BOT_TOKEN, ADMINS
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
+from db import save_video, get_video
+import uuid
+import asyncio
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler, CallbackContext
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+
+# وضعیت‌ها
+class SuperPostState(StatesGroup):
+    waiting_video = State()
+    waiting_caption = State()
+    waiting_cover = State()
+
+class PostForwardState(StatesGroup):
+    waiting_forward = State()
+    waiting_caption = State()
+
+# دکمه برگشت
+def back_to_panel():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="بازگشت به پنل")]
+    ], resize_keyboard=True)
+
+# دکمه پنل اصلی
+panel_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="سوپر"), KeyboardButton(text="پست")]
+    ],
+    resize_keyboard=True
 )
 
-# اطلاعات ربات
-TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = '@hottof'
-ADMINS = [6387942633, 5459406429, 7189616405, 7827493126, 6039863213]
+# دکمه شیشه‌ای بدون کاور
+skip_cover_markup = InlineKeyboardMarkup(
+    inline_keyboard=[[InlineKeyboardButton(text="بدون کاور", callback_data="skip_cover")]]
+)
 
-# مراحل گفتگو
-WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
+# هندلر استارت
+@dp.message(CommandStart())
+async def start_cmd(message: types.Message):
+    await message.answer("خوش آمدید!", reply_markup=None)
 
-# لاگ
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# post_init برای فعال‌سازی job_queue
-async def post_init(application: Application):
-    _ = application.job_queue
-
-# تعریف ربات
-application = Application.builder().token(TOKEN).post_init(post_init).build()
-
-# دستورات ربات
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMINS:
-        await update.message.reply_text('شما دسترسی به این ربات ندارید.')
-        return ConversationHandler.END
-    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.')
-    return WAITING_FOR_MEDIA
-
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMINS:
-        return ConversationHandler.END
-
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        media_type = 'photo'
-    elif update.message.video:
-        file_id = update.message.video.file_id
-        media_type = 'video'
+# پنل ادمین
+@dp.message(Command("panel"))
+async def admin_panel(message: types.Message):
+    if message.from_user.id in ADMINS:
+        await message.answer("وارد پنل شدید.", reply_markup=panel_keyboard)
     else:
-        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
-        return WAITING_FOR_MEDIA
+        await message.answer("شما دسترسی ندارید.")
 
-    context.user_data['file_id'] = file_id
-    context.user_data['media_type'] = media_type
+# شروع سوپر
+@dp.message(lambda m: m.text == "سوپر")
+async def super_start(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMINS:
+        return
+    await state.set_state(SuperPostState.waiting_video)
+    await message.answer("لطفاً ویدیوی خود را ارسال کنید.", reply_markup=back_to_panel())
 
-    await update.message.reply_text('لطفاً کپشن مورد نظر خود را بنویسید:')
-    return WAITING_FOR_CAPTION
+@dp.message(SuperPostState.waiting_video, lambda m: m.video)
+async def super_get_video(message: types.Message, state: FSMContext):
+    await state.update_data(video=message.video.file_id)
+    await state.set_state(SuperPostState.waiting_caption)
+    await message.answer("کپشن را وارد کنید:")
 
-async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.text
-    final_caption = caption + "\n\n🔥@hottof | تُفِ داغ"
-    context.user_data['caption'] = final_caption
+@dp.message(SuperPostState.waiting_caption)
+async def super_get_caption(message: types.Message, state: FSMContext):
+    await state.update_data(caption=message.text)
+    await state.set_state(SuperPostState.waiting_cover)
+    await message.answer("کاور ویدیو را ارسال کنید یا گزینه زیر را بزنید:", reply_markup=skip_cover_markup)
 
-    keyboard = ReplyKeyboardMarkup(
-        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
-        resize_keyboard=True
+@dp.message(SuperPostState.waiting_cover, lambda m: m.photo)
+async def super_get_cover(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    cover = message.photo[-1].file_id
+    await finish_super(message, data, cover)
+    await state.clear()
+
+@dp.callback_query(lambda c: c.data == "skip_cover")
+async def skip_cover_handler(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await finish_super(callback.message, data, None)
+    await callback.message.delete()
+    await state.clear()
+
+async def finish_super(message, data, cover):
+    file_id = data["video"]
+    caption = data["caption"]
+    file_key = str(uuid.uuid4())
+
+    save_video(file_key, file_id, caption, cover)
+
+    link = f"https://t.me/{(await bot.me()).username}?start={file_key}"
+    text = f"{caption or ''}\n\n[مشاهده]({link})\n🔥hottof | تُفِ داغ"
+
+    await message.answer_photo(
+        photo=cover if cover else file_id,
+        caption=text,
+        parse_mode="Markdown",
+        reply_markup=panel_keyboard
     )
 
-    media_type = context.user_data['media_type']
-    file_id = context.user_data['file_id']
+# کاربر استارت با لینک
+@dp.message(CommandStart(deep_link=True))
+async def deep_link_start(message: types.Message, command: CommandStart):
+    key = command.args
+    data = get_video(key)
 
-    if media_type == 'photo':
-        await update.message.reply_photo(file_id, caption=final_caption, reply_markup=keyboard)
-    elif media_type == 'video':
-        await update.message.reply_video(file_id, caption=final_caption, reply_markup=keyboard)
+    if not data:
+        await message.answer("این محتوا یافت نشد.")
+        return
 
-    return WAITING_FOR_ACTION
+    msg = await message.answer_video(
+        video=data["video"],
+        caption=(data["caption"] + "\n🔥hottof | تُفِ داغ") if data["caption"] else "🔥hottof | تُفِ داغ"
+    )
 
-async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    await message.answer("این محتوا تا ۲۰ ثانیه دیگر حذف خواهد شد.")
+    await asyncio.sleep(20)
+    await bot.delete_message(message.chat.id, msg.message_id)
 
-    if text == 'ارسال در کانال':
-        await send_to_channel(context)
-        await update.message.reply_text('پیام ارسال شد. لطفاً مدیا بعدی را بفرستید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_MEDIA
-    elif text == 'ارسال در آینده':
-        await update.message.reply_text('زمان ارسال (به دقیقه) را وارد کنید:', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_SCHEDULE
-    elif text == 'برگشت به ابتدا':
-        await update.message.reply_text('لغو شد. لطفاً دوباره مدیا بفرستید.', reply_markup=ReplyKeyboardRemove())
-        return WAITING_FOR_MEDIA
+# دکمه پست
+@dp.message(lambda m: m.text == "پست")
+async def post_start(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMINS:
+        return
+    await state.set_state(PostForwardState.waiting_forward)
+    await message.answer("لطفاً یک پیام فوروارد شده یا مدیا ارسال کنید.", reply_markup=back_to_panel())
+
+@dp.message(PostForwardState.waiting_forward, lambda m: m.photo or m.video)
+async def post_get_media(message: types.Message, state: FSMContext):
+    media = message.photo[-1].file_id if message.photo else message.video.file_id
+    await state.update_data(media=media, type="photo" if message.photo else "video")
+    await state.set_state(PostForwardState.waiting_caption)
+    await message.answer("کپشن را وارد کنید:")
+
+@dp.message(PostForwardState.waiting_caption)
+async def post_get_caption(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    caption = message.text + "\n🔥@hottof | تُفِ داغ"
+
+    if data["type"] == "photo":
+        await message.answer_photo(photo=data["media"], caption=caption)
     else:
-        await update.message.reply_text('یکی از گزینه‌ها را انتخاب کنید.')
-        return WAITING_FOR_ACTION
+        await message.answer_video(video=data["media"], caption=caption)
 
-async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        minutes = int(update.message.text.strip())
-        job_data = context.user_data.copy()
-
-        context.job_queue.run_once(
-            send_scheduled,
-            when=timedelta(minutes=minutes),
-            data=job_data
-        )
-
-        await update.message.reply_text(
-            f'پیام برای {minutes} دقیقه بعد زمان‌بندی شد.\n\nلطفاً پیام بعدی را ارسال کنید.',
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return WAITING_FOR_MEDIA
-    except Exception as e:
-        logger.error("خطا در handle_schedule:\n%s", traceback.format_exc())
-        await update.message.reply_text('خطا در زمان‌بندی. فقط عدد وارد کنید یا دوباره تلاش کنید.')
-        return WAITING_FOR_SCHEDULE
-
-async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
-    data = context.user_data
-    media_type = data['media_type']
-    file_id = data['file_id']
-    caption = data['caption']
-
-    if media_type == 'photo':
-        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-    elif media_type == 'video':
-        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
-
-async def send_scheduled(context: CallbackContext):
-    try:
-        data = context.job.data
-        media_type = data['media_type']
-        file_id = data['file_id']
-        caption = data['caption']
-
-        if media_type == 'photo':
-            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=file_id, caption=caption)
-        elif media_type == 'video':
-            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=file_id, caption=caption)
-    except Exception as e:
-        logger.error("خطا در send_scheduled:\n%s", traceback.format_exc())
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('لغو شد.', reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
-
-# اجرای اصلی
-def main():
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
-            WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
-            WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
-            WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    application.add_handler(conv_handler)
-
-    WEBHOOK_URL = 'https://sim-dtlp.onrender.com'
-
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
-        webhook_url=WEBHOOK_URL
-    )
-
-if __name__ == '__main__':
-    main()
+    await state.set_state(PostForwardState.waiting_forward)
+    await message.answer("دوباره پیام جدید را فوروارد کنید یا مدیا بفرستید.", reply_markup=back_to_panel())
