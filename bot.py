@@ -37,9 +37,7 @@ panel_keyboard = ReplyKeyboardMarkup(
 )
 
 # دکمه شیشه‌ای بدون کاور
-skip_cover_markup = InlineKeyboardMarkup(
-    inline_keyboard=[[InlineKeyboardButton(text="بدون کاور", callback_data="skip_cover")]]
-)
+
 
 # هندلر استارت
 @dp.message(CommandStart())
