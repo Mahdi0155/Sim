@@ -118,6 +118,9 @@ async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif msg.video:
         await update.message.reply_video(msg.video.file_id, caption=caption)
     await update.message.reply_text("برای فوروارد بعدی پیام فورواردی بفرست:")
+    
+    keyboard = ReplyKeyboardMarkup([['بازگشت به پنل']], resize_keyboard=True)
+    await update.message.reply_text("بازگشت به پنل.", reply_markup=keyboard)
     return POST_FORWARD
 
 # --------------------- MAIN ---------------------
