@@ -1,10 +1,9 @@
-# main.py
-
 import uvicorn
 from fastapi import FastAPI, Request
-from aiogram import types
+from aiogram import Bot, types
+from aiogram.dispatcher.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from bot import dp, bot
-from config import WEBHOOK_URL, BOT_TOKEN
+from config import WEBHOOK_URL
 
 app = FastAPI()
 
@@ -12,19 +11,18 @@ app = FastAPI()
 @app.on_event("startup")
 async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
-    print("وبهوک تنظیم شد")
-
+    print("Webhook set")
 
 @app.on_event("shutdown")
 async def on_shutdown():
     await bot.delete_webhook()
-    print("وبهوک حذف شد")
+    print("Webhook deleted")
 
 
 @app.post("/webhook")
-async def telegram_webhook(update: Request):
-    telegram_update = types.Update.model_validate(await update.json())
-    await dp.feed_update(bot=bot, update=telegram_update)
+async def handle_webhook(request: Request):
+    update = types.Update.model_validate(await request.json())
+    await dp.feed_update(bot, update)
     return {"ok": True}
 
 
