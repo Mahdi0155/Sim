@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # تنظیمات اولیه
-TOKEN = 'YOUR_BOT_TOKEN'  # توکن ربات خود را اینجا وارد کنید
+TOKEN = '7413532622:AAHTJUCRfKxehH7Qltb9pTkayakpjoLqQdk'  # توکن ربات خود را اینجا وارد کنید
 ADMIN_IDS = [7189616405, 6387942633, 5459406429]  # آیدی ادمین‌ها
 CHANNEL_TAG = "🔥@hottof | تُفِ داغ"
 DB_FILE = "data.json"  # فایل ذخیره داده‌ها
