@@ -20,6 +20,7 @@ application = Application.builder().token(TOKEN).build()
 
 VIDEO_DB = {}
 
+# --------------------- START AND PANEL ---------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("به ربات خوش آمدید.")
 
@@ -69,7 +70,7 @@ async def super_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ذخیره لینک منحصر به فرد و اطلاعات ویدیو
     VIDEO_DB[code] = video_id
 
-    # ارسال دکمه مشاهده برای ادمین
+    # ارسال لینک منحصر به فرد برای مشاهده ویدیو به ادمین
     await update.message.reply_text(
         f"لینک منحصر به فرد برای مشاهده ویدیو: https://t.me/{context.bot.username}?start={code}"
     )
@@ -77,6 +78,28 @@ async def super_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # بعد از ارسال لینک به ادمین، به پنل برگردد
     await update.message.reply_text("فرایند سوپر تکمیل شد. منتظر فرایند بعدی باشید.")
     return ConversationHandler.END
+
+# --------------------- POST ---------------------
+
+async def post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.forward_from_chat and not update.message.video and not update.message.photo:
+        await update.message.reply_text("فقط پیام فورواردی یا عکس/ویدیو معتبر است.")
+        return POST_FORWARD
+    context.user_data['forward'] = update.message
+    await update.message.reply_text("کپشن مورد نظر را وارد کن:")
+    return POST_CAPTION
+
+async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = context.user_data['forward']
+    caption = update.message.text + f"\n\n{CHANNEL_TAG}"
+    if msg.photo:
+        await update.message.reply_photo(msg.photo[-1].file_id, caption=caption)
+    elif msg.video:
+        await update.message.reply_video(msg.video.file_id, caption=caption)
+    await update.message.reply_text("فرایند پست تکمیل شد. منتظر پست بعدی باشید.")
+    return ConversationHandler.END
+
+# --------------------- START_HANDLER ---------------------
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
@@ -100,28 +123,6 @@ async def delete_sent_message(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id=job_data['chat_id'], message_id=job_data['message_id'])
     except:
         pass
-
-# --------------------- POST ---------------------
-
-async def post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.forward_from_chat and not update.message.video and not update.message.photo:
-        await update.message.reply_text("فقط پیام فورواردی یا عکس/ویدیو معتبر است.")
-        return POST_FORWARD
-    context.user_data['forward'] = update.message
-    await update.message.reply_text("کپشن مورد نظر را وارد کن:")
-    return POST_CAPTION
-
-async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = context.user_data['forward']
-    caption = update.message.text + f"\n\n{CHANNEL_TAG}"
-    if msg.photo:
-        await update.message.reply_photo(msg.photo[-1].file_id, caption=caption)
-    elif msg.video:
-        await update.message.reply_video(msg.video.file_id, caption=caption)
-    await update.message.reply_text("فرایند پست تکمیل شد. منتظر پست بعدی باشید.")
-
-    # پس از تکمیل فرایند، هیچ بازگشتی به پنل نخواهد بود
-    return ConversationHandler.END
 
 # --------------------- MAIN ---------------------
 
