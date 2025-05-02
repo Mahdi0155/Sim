@@ -6,7 +6,7 @@ from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = "7413532622:AAHTJUCRfKxehH7Qltb9pTkayakpjoLqQdk"
 ADMIN_IDS = [7189616405, 6387942633, 5459406429]
 bot = Bot(token=TOKEN)
 app = Flask(__name__)
