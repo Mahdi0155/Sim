@@ -198,7 +198,7 @@ def run_flask():
 
 def main():
     threading.Thread(target=run_flask).start()
-    WEBHOOK_URL = "https://your-domain.com/webhook"
+    WEBHOOK_URL = "https://sim-1-yqxq.onrender.com/webhook"
     application.run_webhook(
         listen="0.0.0.0",
         port=8443,
