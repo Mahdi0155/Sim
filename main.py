@@ -4,7 +4,6 @@ from aiogram.types import Update
 from fastapi import FastAPI, Request
 from config import BOT_TOKEN, WEBHOOK_URL
 from handlers import setup_handlers
-import uvicorn
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -18,16 +17,10 @@ async def webhook_handler(request: Request):
     await dp.feed_update(bot, update)
     return {"status": "ok"}
 
-async def on_startup():
+@app.on_event("startup")
+async def startup():
     await bot.set_webhook(WEBHOOK_URL)
 
-async def on_shutdown():
-    await bot.delete_webhook()
-
-@app.on_event("startup")
-async def startup_event():
-    await on_startup()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-if __name__ == "__main__":
-    asyncio.run(on_shutdown())
+@app.on_event("shutdown")
+async def shutdown():
+    await bot.session.close()
