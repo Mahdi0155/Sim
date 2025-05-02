@@ -1,18 +1,34 @@
-import json
 import os
+import json
+import logging
+import traceback
+import threading
 import time
-from threading import Thread
+from datetime import timedelta
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, ContextTypes,
+    ConversationHandler, CallbackContext, filters
+)
 
-TOKEN = "7413532622:AAHTJUCRfKxehH7Qltb9pTkayakpjoLqQdk"
-ADMIN_IDS = [7189616405, 6387942633, 5459406429]
-bot = Bot(token=TOKEN)
-app = Flask(__name__)
-
+# تنظیمات
+TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_USERNAME = '@hottof'
+ADMINS = [6387942633, 5459406429, 7189616405]
 DATA_FILE = "data.json"
 
+# مراحل
+WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
+
+# اپلیکیشن Flask برای دریافت لینک‌ها
+flask_app = Flask(__name__)
+
+# راه‌اندازی لاگ
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# بارگذاری فایل‌ها
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -25,76 +41,169 @@ def save_data(data):
 
 data = load_data()
 
-def is_admin(user_id):
-    return user_id in ADMIN_IDS
+# راه‌اندازی اپلیکیشن تلگرام
+application = Application.builder().token(TOKEN).build()
 
-def handle_upload(update: Update, context):
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text("دسترسی نداری.")
-        return
+# start برای زمان‌بندی پست
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text('شما دسترسی ندارید.')
+        return ConversationHandler.END
+    await update.message.reply_text('سلام! لطفاً یک عکس یا ویدیو فوروارد کن.')
+    return WAITING_FOR_MEDIA
 
-    if not context.args:
-        update.message.reply_text("فرمت: /upload name")
-        return
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        return ConversationHandler.END
 
-    name = context.args[0]
-    if update.message.video:
-        file_id = update.message.video.file_id
-        file_type = "video"
-    elif update.message.photo:
+    file_id = None
+    media_type = None
+    if update.message.photo:
         file_id = update.message.photo[-1].file_id
-        file_type = "photo"
+        media_type = 'photo'
+    elif update.message.video:
+        file_id = update.message.video.file_id
+        media_type = 'video'
     else:
-        update.message.reply_text("فقط ویدیو یا عکس بفرست.")
+        await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
+        return WAITING_FOR_MEDIA
+
+    context.user_data['file_id'] = file_id
+    context.user_data['media_type'] = media_type
+
+    await update.message.reply_text('لطفاً کپشن را وارد کنید:')
+    return WAITING_FOR_CAPTION
+
+async def handle_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = update.message.text
+    final_caption = caption + "\n\n🔥@hottof | تُفِ داغ"
+    context.user_data['caption'] = final_caption
+
+    keyboard = ReplyKeyboardMarkup(
+        [['ارسال در کانال', 'ارسال در آینده'], ['برگشت به ابتدا']],
+        resize_keyboard=True
+    )
+
+    if context.user_data['media_type'] == 'photo':
+        await update.message.reply_photo(context.user_data['file_id'], caption=final_caption, reply_markup=keyboard)
+    else:
+        await update.message.reply_video(context.user_data['file_id'], caption=final_caption, reply_markup=keyboard)
+
+    return WAITING_FOR_ACTION
+
+async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == 'ارسال در کانال':
+        await send_to_channel(context)
+        await update.message.reply_text('ارسال شد.', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_MEDIA
+    elif text == 'ارسال در آینده':
+        await update.message.reply_text('زمان به دقیقه را وارد کن:', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_SCHEDULE
+    elif text == 'برگشت به ابتدا':
+        return WAITING_FOR_MEDIA
+    else:
+        return WAITING_FOR_ACTION
+
+async def handle_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        minutes = int(update.message.text.strip())
+        context.job_queue.run_once(
+            send_scheduled,
+            when=timedelta(minutes=minutes),
+            data=context.user_data.copy()
+        )
+        await update.message.reply_text('زمان‌بندی شد.', reply_markup=ReplyKeyboardRemove())
+        return WAITING_FOR_MEDIA
+    except Exception:
+        await update.message.reply_text('خطا در زمان وارد شده.')
+        return WAITING_FOR_SCHEDULE
+
+async def send_to_channel(context: ContextTypes.DEFAULT_TYPE):
+    d = context.user_data
+    if d['media_type'] == 'photo':
+        await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=d['file_id'], caption=d['caption'])
+    else:
+        await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=d['file_id'], caption=d['caption'])
+
+async def send_scheduled(context: CallbackContext):
+    d = context.job.data
+    try:
+        if d['media_type'] == 'photo':
+            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=d['file_id'], caption=d['caption'])
+        else:
+            await context.bot.send_video(chat_id=CHANNEL_USERNAME, video=d['file_id'], caption=d['caption'])
+    except Exception as e:
+        logger.error("Scheduled Error: %s", e)
+
+# قابلیت uploadlink
+async def uploadlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMINS:
+        await update.message.reply_text("دسترسی نداری.")
         return
-
-    data[name] = {"file_id": file_id, "type": file_type}
-    save_data(data)
-    link = f"https://your-domain.com/get/{name}"
-    update.message.reply_text(f"فایل ذخیره شد!\nلینک: {link}")
-
-def handle_get(update: Update, context):
     if not context.args:
-        update.message.reply_text("فرمت: /get name")
+        await update.message.reply_text("فرمت: /uploadlink name (با فایل)")
         return
     name = context.args[0]
-    if name not in data:
-        update.message.reply_text("فایلی با این اسم نداریم.")
-        return
-
-    file_info = data[name]
-    if file_info["type"] == "video":
-        msg = update.message.reply_video(file_info["file_id"])
+    msg = update.message
+    file_id = None
+    media_type = None
+    if msg.photo:
+        file_id = msg.photo[-1].file_id
+        media_type = "photo"
+    elif msg.video:
+        file_id = msg.video.file_id
+        media_type = "video"
     else:
-        msg = update.message.reply_photo(file_info["file_id"])
+        await msg.reply_text("فقط عکس یا ویدیو.")
+        return
+    data[name] = {"file_id": file_id, "type": media_type}
+    save_data(data)
+    await msg.reply_text(f"فایل ذخیره شد.\nلینک: https://your-domain.com/get/{name}")
 
-    def delete_later(chat_id, message_id):
-        time.sleep(20)
-        bot.delete_message(chat_id=chat_id, message_id=message_id)
+application.add_handler(ConversationHandler(
+    entry_points=[CommandHandler("start", start)],
+    states={
+        WAITING_FOR_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, handle_media)],
+        WAITING_FOR_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_caption)],
+        WAITING_FOR_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_action)],
+        WAITING_FOR_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_schedule)],
+    },
+    fallbacks=[]
+))
 
-    Thread(target=delete_later, args=(msg.chat_id, msg.message_id)).start()
+application.add_handler(CommandHandler("uploadlink", uploadlink))
 
-# Webhook endpoint
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dp.process_update(update)
-    return "ok"
+# Flask endpoint برای /get/<name>
+@flask_app.route("/get/<name>", methods=["GET"])
+def serve_file(name):
+    user_id = request.args.get("user_id", type=int, default=None)
+    if name not in data:
+        return "فایل پیدا نشد.", 404
+    file = data[name]
+    bot = application.bot
+    if user_id:
+        msg = None
+        if file["type"] == "photo":
+            msg = bot.send_photo(chat_id=user_id, photo=file["file_id"])
+        else:
+            msg = bot.send_video(chat_id=user_id, video=file["file_id"])
+        threading.Thread(target=lambda: (time.sleep(20), bot.delete_message(chat_id=user_id, message_id=msg.message_id))).start()
+        return "ارسال شد"
+    return "لینک ناقص است. user_id نیاز است.", 400
 
-# Set webhook once (optional route)
-@app.route("/setwebhook")
-def set_webhook():
-    webhook_url = f"https://your-domain.com/webhook/{TOKEN}"
-    bot.set_webhook(webhook_url)
-    return f"Webhook set to {webhook_url}"
+# اجرای همزمان Flask و bot
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# Dispatcher and handlers
-from telegram.ext import Updater
-dp = Dispatcher(bot, None, workers=0)
-dp.add_handler(CommandHandler("upload", handle_upload))
-dp.add_handler(CommandHandler("get", handle_get))
-dp.add_handler(MessageHandler(Filters.video | Filters.photo, handle_upload))
+def main():
+    threading.Thread(target=run_flask).start()
+    WEBHOOK_URL = "https://your-domain.com/webhook"
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=8443,
+        webhook_url=WEBHOOK_URL
+    )
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    main()
