@@ -1,3 +1,7 @@
-flask
-requests
-gunicorn
+# requirements.txt
+aiogram==3.*
+fastapi
+uvicorn
+
+# برای اجرا:
+# pip install -r requirements.txt
