@@ -1,11 +1,10 @@
-# main.py
-
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Request
 from config import BOT_TOKEN, WEBHOOK_URL
 from handlers import setup_handlers
+import uvicorn
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -25,10 +24,10 @@ async def on_startup():
 async def on_shutdown():
     await bot.delete_webhook()
 
-if __name__ == "__main__":
-    import uvicorn
-    @app.on_event("startup")
+@app.on_event("startup")
 async def startup_event():
     await on_startup()
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+if __name__ == "__main__":
     asyncio.run(on_shutdown())
