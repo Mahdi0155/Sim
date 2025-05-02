@@ -4,6 +4,7 @@ import logging
 import traceback
 import threading
 import time
+import asyncio
 from datetime import timedelta
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -17,18 +18,15 @@ TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_USERNAME = '@hottof'
 ADMINS = [6387942633, 5459406429, 7189616405]
 DATA_FILE = "data.json"
+WEBHOOK_URL = "https://sim-1-yqxq.onrender.com/webhook"
 
-# مراحل
 WAITING_FOR_MEDIA, WAITING_FOR_CAPTION, WAITING_FOR_ACTION, WAITING_FOR_SCHEDULE = range(4)
 
-# اپلیکیشن Flask برای دریافت لینک‌ها
 flask_app = Flask(__name__)
 
-# راه‌اندازی لاگ
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# بارگذاری فایل‌ها
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -41,10 +39,10 @@ def save_data(data):
 
 data = load_data()
 
-# راه‌اندازی اپلیکیشن تلگرام
 application = Application.builder().token(TOKEN).build()
 
-# start برای زمان‌بندی پست
+# --- handlers ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text('شما دسترسی ندارید.')
@@ -56,20 +54,15 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         return ConversationHandler.END
 
-    file_id = None
-    media_type = None
     if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        media_type = 'photo'
+        context.user_data['file_id'] = update.message.photo[-1].file_id
+        context.user_data['media_type'] = 'photo'
     elif update.message.video:
-        file_id = update.message.video.file_id
-        media_type = 'video'
+        context.user_data['file_id'] = update.message.video.file_id
+        context.user_data['media_type'] = 'video'
     else:
         await update.message.reply_text('فقط عکس یا ویدیو قابل قبول است.')
         return WAITING_FOR_MEDIA
-
-    context.user_data['file_id'] = file_id
-    context.user_data['media_type'] = media_type
 
     await update.message.reply_text('لطفاً کپشن را وارد کنید:')
     return WAITING_FOR_CAPTION
@@ -136,7 +129,6 @@ async def send_scheduled(context: CallbackContext):
     except Exception as e:
         logger.error("Scheduled Error: %s", e)
 
-# قابلیت uploadlink
 async def uploadlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMINS:
         await update.message.reply_text("دسترسی نداری.")
@@ -146,8 +138,6 @@ async def uploadlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     name = context.args[0]
     msg = update.message
-    file_id = None
-    media_type = None
     if msg.photo:
         file_id = msg.photo[-1].file_id
         media_type = "photo"
@@ -159,8 +149,9 @@ async def uploadlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     data[name] = {"file_id": file_id, "type": media_type}
     save_data(data)
-    await msg.reply_text(f"فایل ذخیره شد.\nلینک: https://your-domain.com/get/{name}")
+    await msg.reply_text(f"فایل ذخیره شد.\nلینک: https://sim-1-yqxq.onrender.com/get/{name}")
 
+# --- register handlers ---
 application.add_handler(ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
@@ -171,13 +162,12 @@ application.add_handler(ConversationHandler(
     },
     fallbacks=[]
 ))
-
 application.add_handler(CommandHandler("uploadlink", uploadlink))
 
-# Flask endpoint برای /get/<name>
+# --- Flask endpoint برای لینک دریافت فایل ---
 @flask_app.route("/get/<name>", methods=["GET"])
 def serve_file(name):
-    user_id = request.args.get("user_id", type=int, default=None)
+    user_id = request.args.get("user_id", type=int)
     if name not in data:
         return "فایل پیدا نشد.", 404
     file = data[name]
@@ -190,20 +180,22 @@ def serve_file(name):
             msg = bot.send_video(chat_id=user_id, video=file["file_id"])
         threading.Thread(target=lambda: (time.sleep(20), bot.delete_message(chat_id=user_id, message_id=msg.message_id))).start()
         return "ارسال شد"
-    return "لینک ناقص است. user_id نیاز است.", 400
+    return "user_id لازم است", 400
 
-# اجرای همزمان Flask و bot
+# --- اجرای ربات و Flask همزمان ---
 def run_flask():
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
+
+async def run_bot():
+    await application.initialize()
+    await application.start()
+    await application.bot.set_webhook(WEBHOOK_URL)
+    await application.updater.start_polling()  # اختیاری: فقط برای تست local
 
 def main():
     threading.Thread(target=run_flask).start()
-    WEBHOOK_URL = "https://sim-1-yqxq.onrender.com/webhook"
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=8443,
-        webhook_url=WEBHOOK_URL
-    )
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
