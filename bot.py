@@ -66,16 +66,16 @@ async def super_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = context.user_data['video_unique']
     cover_id = update.message.photo[-1].file_id
 
+    # ذخیره لینک منحصر به فرد و اطلاعات ویدیو
     VIDEO_DB[code] = video_id
-    btn = InlineKeyboardMarkup.from_button(InlineKeyboardButton("مشاهده", url=f"https://t.me/hottofbot?start={code}"))
 
-    await update.message.reply_photo(
-        photo=cover_id,
-        caption=f"{caption}\n\n{CHANNEL_TAG}",
-        reply_markup=btn
+    # ارسال دکمه مشاهده برای ادمین
+    await update.message.reply_text(
+        f"لینک منحصر به فرد برای مشاهده ویدیو: https://t.me/{context.bot.username}?start={code}"
     )
-    # بعد از تکمیل فرایند، هیچ بازگشتی به پنل نخواهد بود
-    await update.message.reply_text("فرایند کامل شد. منتظر فرایند بعدی باشید.")
+
+    # بعد از ارسال لینک به ادمین، به پنل برگردد
+    await update.message.reply_text("فرایند سوپر تکمیل شد. منتظر فرایند بعدی باشید.")
     return ConversationHandler.END
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,6 +83,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         code = context.args[0]
         if code in VIDEO_DB:
             msg = await update.message.reply_video(VIDEO_DB[code])
+            # حذف پیام بعد از 20 ثانیه
             context.job_queue.run_once(delete_sent_message, 20, data={
                 'chat_id': msg.chat_id,
                 'message_id': msg.message_id
