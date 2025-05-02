@@ -1,7 +1,6 @@
 import os
 import logging
 from uuid import uuid4
-from datetime import timedelta
 from telegram import (Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup,
                       ReplyKeyboardRemove)
 from telegram.ext import (Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler,
@@ -75,7 +74,8 @@ async def super_cover(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption=f"{caption}\n\n{CHANNEL_TAG}",
         reply_markup=btn
     )
-    await update.message.reply_text("بازگشت به پنل.", reply_markup=ReplyKeyboardMarkup([['سوپر', 'پست']], resize_keyboard=True))
+    # بعد از تکمیل فرایند، هیچ بازگشتی به پنل نخواهد بود
+    await update.message.reply_text("فرایند کامل شد. منتظر فرایند بعدی باشید.")
     return ConversationHandler.END
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,17 +117,9 @@ async def post_caption(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_photo(msg.photo[-1].file_id, caption=caption)
     elif msg.video:
         await update.message.reply_video(msg.video.file_id, caption=caption)
-    await update.message.reply_text("برای فوروارد بعدی پیام فورواردی بفرست:")
+    await update.message.reply_text("فرایند پست تکمیل شد. منتظر پست بعدی باشید.")
 
-    # اضافه کردن دکمه بازگشت به پنل
-    keyboard = ReplyKeyboardMarkup([['بازگشت به پنل']], resize_keyboard=True)
-    await update.message.reply_text("برای بازگشت به پنل اصلی، دکمه زیر را فشار دهید.", reply_markup=keyboard)
-    return POST_FORWARD
-
-# این بخش برای برگشت به پنل هنگام فشردن دکمه «بازگشت به پنل»
-async def back_to_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = ReplyKeyboardMarkup([['سوپر', 'پست']], resize_keyboard=True)
-    await update.message.reply_text("به پنل اصلی بازگشتید.", reply_markup=keyboard)
+    # پس از تکمیل فرایند، هیچ بازگشتی به پنل نخواهد بود
     return ConversationHandler.END
 
 # --------------------- MAIN ---------------------
@@ -142,7 +134,7 @@ def main():
             POST_FORWARD: [MessageHandler(filters.ALL, post_forward)],
             POST_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, post_caption)],
         },
-        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, back_to_panel)]
+        fallbacks=[]
     )
     application.add_handler(conv)
     application.add_handler(CommandHandler("start", start_handler))
