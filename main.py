@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 import os
 
-ADMIN_ID = 6387942633  # آیدی عددی ادمین
+ADMIN_ID = 6387942633
 DATA_FILE = "files.json"
 STATES = {
     "WAIT_FILE": 1,
@@ -28,7 +28,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# شروع پنل
 def panel(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -36,7 +35,6 @@ def panel(update: Update, context: CallbackContext):
     update.message.reply_text("لطفاً ویدیو یا عکس اصلی را ارسال کن.")
     return STATES["WAIT_FILE"]
 
-# گرفتن فایل اصلی
 def handle_file(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
@@ -63,7 +61,6 @@ def handle_file(update: Update, context: CallbackContext):
         update.message.reply_text("عکس دریافت شد. لطفاً کپشن فایل رو ارسال کن.")
         return STATES["WAIT_CAPTION"]
 
-# گرفتن کاور
 def handle_cover(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         return ConversationHandler.END
@@ -76,7 +73,6 @@ def handle_cover(update: Update, context: CallbackContext):
     update.message.reply_text("کاور دریافت شد. لطفاً کپشن رو ارسال کن.")
     return STATES["WAIT_CAPTION"]
 
-# گرفتن کپشن و ساخت لینک
 def handle_caption(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if uid != ADMIN_ID:
@@ -88,7 +84,6 @@ def handle_caption(update: Update, context: CallbackContext):
     token = str(uuid.uuid4())[:8]
     session["token"] = token
 
-    # ذخیره فایل
     data = load_data()
     data[token] = {
         "file_id": session["file_id"],
@@ -102,7 +97,6 @@ def handle_caption(update: Update, context: CallbackContext):
     bot_username = context.bot.username
     link = f"https://t.me/{bot_username}?start={token}"
 
-    # ساخت پیش‌نمایش
     final_caption = f"""{caption}
 
 مشاهده: [کلیک کنید]({link})
@@ -127,7 +121,6 @@ def handle_caption(update: Update, context: CallbackContext):
     update.message.reply_text("پیش‌نمایش ساخته شد. پیام رو کپی کن و توی کانال ارسال کن.")
     return ConversationHandler.END
 
-# دستور /start برای کاربران
 def start(update: Update, context: CallbackContext):
     args = context.args
     if not args:
@@ -146,7 +139,6 @@ def start(update: Update, context: CallbackContext):
     file_id = item["file_id"]
     caption = item["caption"]
 
-    # هشدار قبل از ارسال
     warning = update.message.reply_text("توجه: این فایل پس از ۲۰ ثانیه حذف خواهد شد.")
 
     if file_type == "photo":
@@ -155,26 +147,26 @@ def start(update: Update, context: CallbackContext):
         thumb = item.get("thumb_id")
         sent = update.message.reply_video(video=file_id, thumb=thumb, caption=caption)
 
-    # حذف پس از ۲۰ ثانیه
     context.job_queue.run_once(lambda c: sent.delete(), 20)
     context.job_queue.run_once(lambda c: warning.delete(), 20)
 
-# کنسل کردن
 def cancel(update: Update, context: CallbackContext):
     update.message.reply_text("عملیات لغو شد.")
     return ConversationHandler.END
 
-# شروع ربات
 def main():
     TOKEN = "7413532622:AAGmb4UihdcGROnhhSVwTwz_0jy9DaovjWo"
-    PORT = int(os.environ.get("PORT", 5000))  # پورت تنظیمات سرور
+    APP_URL = "https://sim-1-yqxq.onrender.com"
 
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # تنظیم Webhook
-    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN)
-    updater.bot.set_webhook(url=f"https://sim-1-yqxq.onrender.com/{TOKEN}")
+    updater.start_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8443)),
+        url_path=TOKEN
+    )
+    updater.bot.set_webhook(f"{APP_URL}/{TOKEN}")
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("panel", panel)],
