@@ -5,7 +5,6 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ParseMo
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler, CallbackQueryHandler
 )
-import os
 
 ADMIN_ID = 6387942633
 DATA_FILE = "files.json"
@@ -126,6 +125,10 @@ def handle_caption_simple(update: Update, context: CallbackContext):
     update.message.reply_text("پیش‌نمایش ساخته شد. پیام رو کپی کن و توی کانال ارسال کن.")
     return ConversationHandler.END
 
+def delete_message(context: CallbackContext):
+    job = context.job
+    context.bot.delete_message(chat_id=job.context["chat_id"], message_id=job.context["message_id"])
+
 def start(update: Update, context: CallbackContext):
     args = context.args
     if not args:
@@ -146,8 +149,8 @@ def start(update: Update, context: CallbackContext):
     else:
         thumb = item.get("thumb_id")
         sent = update.message.reply_video(video=file_id, thumb=thumb, caption=caption)
-    context.job_queue.run_once(lambda c: sent.delete(), 20)
-    context.job_queue.run_once(lambda c: warning.delete(), 20)
+    context.job_queue.run_once(delete_message, 20, context={"chat_id": update.effective_chat.id, "message_id": sent.message_id})
+    context.job_queue.run_once(delete_message, 20, context={"chat_id": update.effective_chat.id, "message_id": warning.message_id})
 
 def cancel(update: Update, context: CallbackContext):
     update.message.reply_text("عملیات لغو شد.")
@@ -155,11 +158,8 @@ def cancel(update: Update, context: CallbackContext):
 
 def main():
     TOKEN = "7413532622:AAGmb4UihdcGROnhhSVwTwz_0jy9DaovjWo"
-    PORT = int(os.environ.get("PORT", 5000))
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
-    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN)
-    updater.bot.set_webhook(url=f"https://sim-1-yqxq.onrender.com/{TOKEN}")
     conv = ConversationHandler(
         entry_points=[CommandHandler("panel", panel)],
         states={
@@ -173,6 +173,7 @@ def main():
     )
     dp.add_handler(conv)
     dp.add_handler(CommandHandler("start", start))
+    updater.start_polling()
     updater.idle()
 
 if __name__ == "__main__":
