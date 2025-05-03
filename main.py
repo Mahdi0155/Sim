@@ -5,6 +5,7 @@ from telegram import Update, InputMediaPhoto, ParseMode
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
 )
+import os
 
 ADMIN_ID = 6387942633  # آیدی عددی ادمین
 DATA_FILE = "files.json"
@@ -166,8 +167,14 @@ def cancel(update: Update, context: CallbackContext):
 # شروع ربات
 def main():
     TOKEN = "7413532622:AAGmb4UihdcGROnhhSVwTwz_0jy9DaovjWo"
+    PORT = int(os.environ.get("PORT", 5000))  # پورت تنظیمات سرور
+
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
+
+    # تنظیم Webhook
+    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN)
+    updater.bot.set_webhook(url=f"https://sim-1-yqxq.onrender.com/{TOKEN}")
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("panel", panel)],
@@ -182,7 +189,6 @@ def main():
     dp.add_handler(conv)
     dp.add_handler(CommandHandler("start", start))
 
-    updater.start_polling()
     updater.idle()
 
 if __name__ == "__main__":
