@@ -5,7 +5,7 @@ from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # اطلاعات پایه
-ADMIN_ID = 123456789  # آیدی عددی ادمین
+ADMIN_ID = 6387942633  # آیدی عددی ادمین
 DATA_FILE = "files.json"
 
 # بارگذاری فایل دیتابیس
@@ -89,7 +89,7 @@ def handle_file(update: Update, context: CallbackContext):
 
 # شروع ربات
 def main():
-    TOKEN = "YOUR_BOT_TOKEN"
+    TOKEN = "7413532622:AAGmb4UihdcGROnhhSVwTwz_0jy9DaovjWo"
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
