@@ -4,8 +4,8 @@ import os
 import secrets
 
 # IMPORTANT: Set via Render environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEBHOOK_BASE = os.getenv("WEBHOOK_BASE", "https://your-service.onrender.com")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8035328341:AAFyj7umXEjrgs8fourpQp0Yi9gftQ_sDM4")
+WEBHOOK_BASE = os.getenv("WEBHOOK_BASE", "https://sim-t2u1.onrender.com")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", secrets.token_urlsafe(16))
 CHANNEL_UPLOAD_ID = int(os.getenv("CHANNEL_UPLOAD_ID", "0"))  # e.g. -1001234567890
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
