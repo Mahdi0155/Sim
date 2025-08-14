@@ -1,0 +1,30 @@
+# ───────────────────────── render.yaml ─────────────────────────
+
+services:
+  - type: web
+    name: telegram-bot-render
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_BASE
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: CHANNEL_UPLOAD_ID
+        sync: false
+      - key: DELETE_AFTER_SECONDS
+        value: "120"
+      - key: SELF_PING_INTERVAL
+        value: "240"
+      - key: TZ_NAME
+        value: "Europe/Amsterdam"
