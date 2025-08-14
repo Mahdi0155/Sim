@@ -8,7 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8035328341:AAFyj7umXEjrgs8fourpQp0Yi9gftQ_sD
 WEBHOOK_BASE = os.getenv("WEBHOOK_BASE", "https://sim-t2u1.onrender.com")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", secrets.token_urlsafe(16))
 CHANNEL_UPLOAD_ID = int(os.getenv("CHANNEL_UPLOAD_ID", "0"))  # e.g. -1001234567890
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+OWNER_ID = int(os.getenv("OWNER_ID", "6387942633"))
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 
 # Default TTL for deletion
